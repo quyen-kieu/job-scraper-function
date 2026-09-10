@@ -183,7 +183,8 @@ jobs:
           az deployment group what-if \
             --resource-group java-functions-group \
             --template-file infra/azure/main.bicep \
-            --parameters infra/azure/parameters.${{ needs.setup.outputs.bicep_env }}.json
+            --parameters infra/azure/parameters.${{ needs.setup.outputs.bicep_env }}.json \
+            --parameters cicdServicePrincipalObjectId=${{ vars.AZURE_CICD_SP_OBJECT_ID }}
 
   # README item 4. Uses the REAL remote backend (unlike infra-validate.yml's stateless preview),
   # since this plan must be apply-able by apply-confluent later in the same pipeline.
@@ -193,6 +194,14 @@ jobs:
     defaults:
       run:
         working-directory: infra/confluent
+    # ARM_* vars enable the azurerm backend's `use_azuread_auth=true` (OIDC token exchange via the
+    # ACTIONS_ID_TOKEN_REQUEST_* env vars GitHub sets automatically from `permissions: id-token:
+    # write` above) — no azure/login step is needed for Terraform itself, only for `az` CLI steps.
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: true
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -204,7 +213,8 @@ jobs:
             -backend-config="resource_group_name=${{ vars.TF_BACKEND_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
-            -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate"
+            -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate" \
+            -backend-config="use_azuread_auth=true"
       - name: terraform plan
         run: terraform plan -input=false -out=tfplan
         env:
@@ -238,7 +248,8 @@ jobs:
           az deployment group create \
             --resource-group java-functions-group \
             --template-file infra/azure/main.bicep \
-            --parameters infra/azure/parameters.${{ needs.setup.outputs.bicep_env }}.json
+            --parameters infra/azure/parameters.${{ needs.setup.outputs.bicep_env }}.json \
+            --parameters cicdServicePrincipalObjectId=${{ vars.AZURE_CICD_SP_OBJECT_ID }}
 
   # README item 8. Reuses the exact plan approved above (no re-plan/re-approve drift).
   apply-confluent:
@@ -249,6 +260,11 @@ jobs:
     defaults:
       run:
         working-directory: infra/confluent
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: true
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -264,7 +280,8 @@ jobs:
             -backend-config="resource_group_name=${{ vars.TF_BACKEND_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
-            -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate"
+            -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate" \
+            -backend-config="use_azuread_auth=true"
       - name: terraform apply (using the plan-confluent job's saved plan)
         run: terraform apply -input=false -auto-approve tfplan
 
