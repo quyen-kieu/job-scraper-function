@@ -1,0 +1,27 @@
+target/
+local.settings.json
+*.log
+/output/
+
+# IDE / local emulator artifacts (developer-machine-specific, never shared)
+.idea/
+*.iml
+.azurite/
+.vscode/
+
+# Terraform (infra/confluent)
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+*.backend.hcl
+crash.log
+crash.*.log
+
+# Bicep build output (az bicep build compiles .bicep -> .json ARM templates locally)
+infra/azure/**/*.json
+!infra/azure/parameters*.json
+

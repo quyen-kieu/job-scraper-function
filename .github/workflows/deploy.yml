@@ -1,0 +1,349 @@
+name: deploy
+
+# Stage 8 — the full CI/CD pipeline from the README's Stage 8 pipeline diagram:
+#   validate -> unit-tests -> package -> plan-azure -> plan-confluent -> approval-gate
+#     -> apply-azure -> apply-confluent -> deploy-app -> smoke-test-kafka
+#
+# Trigger behavior (enforces README item 11, "restrict production deployment to the main
+# branch", structurally rather than by convention — see the `setup` job's should_apply logic):
+#   - pull_request: validate/unit-tests/package/plan-azure/plan-confluent only (read-only preview).
+#   - push to main: full pipeline, targeting the "production" GitHub Environment (requires the
+#     manual reviewer approval configured there — see .github/workflows/README.md).
+#   - workflow_dispatch: manual run against either environment; production is still only allowed
+#     to apply when the workflow is running from the main branch ref.
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "pom.xml"
+      - "infra/**"
+      - "scripts/**"
+      - ".github/workflows/deploy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "pom.xml"
+      - "infra/**"
+      - "scripts/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Environment to target for a manual run"
+        type: choice
+        options: [dev, production]
+        default: dev
+
+permissions:
+  id-token: write   # required for azure/login OIDC federated credential
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Computes the target GitHub Environment, Bicep environment suffix, Function App name, and
+  # whether this run is allowed to apply/deploy/smoke-test at all (vs. validate/plan only).
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      gh_environment: ${{ steps.vars.outputs.gh_environment }}
+      bicep_env: ${{ steps.vars.outputs.bicep_env }}
+      function_app_name: ${{ steps.vars.outputs.function_app_name }}
+      should_apply: ${{ steps.vars.outputs.should_apply }}
+    steps:
+      - id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ inputs.target_environment }}"
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TARGET="production"
+          else
+            TARGET="dev"
+          fi
+
+          if [ "${TARGET}" = "production" ]; then
+            BICEP_ENV="prod"
+            GH_ENV="production"
+          else
+            BICEP_ENV="dev"
+            GH_ENV="dev"
+          fi
+
+          FUNCTION_APP_NAME="job-scraper-function-${BICEP_ENV}"
+
+          # README item 11: production only ever applies when running from main, regardless of
+          # trigger type (push or manual workflow_dispatch). dev may apply from any branch/run,
+          # since it's not "production". PRs never apply (validate/plan only).
+          SHOULD_APPLY="false"
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            if [ "${TARGET}" = "production" ]; then
+              if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+                SHOULD_APPLY="true"
+              fi
+            else
+              SHOULD_APPLY="true"
+            fi
+          fi
+
+          {
+            echo "gh_environment=${GH_ENV}"
+            echo "bicep_env=${BICEP_ENV}"
+            echo "function_app_name=${FUNCTION_APP_NAME}"
+            echo "should_apply=${SHOULD_APPLY}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved: environment=${GH_ENV} bicep_env=${BICEP_ENV} function_app=${FUNCTION_APP_NAME} should_apply=${SHOULD_APPLY}"
+
+  # README item 2 + Bicep/Terraform syntax checks (mirrors infra-validate.yml so this pipeline
+  # is self-contained and doesn't depend on that separate PR-only workflow having also run).
+  validate:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: az bicep build (syntax/type check)
+        run: az bicep build --file infra/azure/main.bicep
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: terraform fmt (check only)
+        working-directory: infra/confluent
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no remote state; validate only)
+        working-directory: infra/confluent
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        working-directory: infra/confluent
+        run: terraform validate
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate Kafka topic/consumer-group config drift (README item 2)
+        run: python scripts/validate_kafka_config.py
+
+  # README item 1.
+  unit-tests:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: mvn test (integration-tagged tests excluded by existing surefire config)
+        run: mvn -B test
+
+  # README item 3. Uploads the staging directory as an artifact so deploy-app doesn't rebuild.
+  package:
+    needs: [setup, unit-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: mvn clean package (skip tests, already run in unit-tests)
+        run: mvn -B -DskipTests clean package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: function-app-package
+          path: target/azure-functions/**
+          retention-days: 7
+
+  # README item 5.
+  plan-azure:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: az deployment group what-if
+        run: |
+          az deployment group what-if \
+            --resource-group java-functions-group \
+            --template-file infra/azure/main.bicep \
+            --parameters infra/azure/parameters.${{ needs.setup.outputs.bicep_env }}.json
+
+  # README item 4. Uses the REAL remote backend (unlike infra-validate.yml's stateless preview),
+  # since this plan must be apply-able by apply-confluent later in the same pipeline.
+  plan-confluent:
+    needs: setup
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/confluent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+      - name: terraform init (real backend)
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TF_BACKEND_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
+            -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate"
+      - name: terraform plan
+        run: terraform plan -input=false -out=tfplan
+        env:
+          TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
+          TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ needs.setup.outputs.bicep_env }}
+          path: infra/confluent/tfplan
+          retention-days: 1
+
+  # README item 7. `environment:` here is the approval-gate (README item 6) — GitHub blocks this
+  # job until a required reviewer approves, for any environment configured with reviewers
+  # (see .github/workflows/README.md for the one-time repo setup).
+  apply-azure:
+    needs: [setup, validate, plan-azure, plan-confluent]
+    if: needs.setup.outputs.should_apply == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.setup.outputs.gh_environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: az deployment group create
+        run: |
+          az deployment group create \
+            --resource-group java-functions-group \
+            --template-file infra/azure/main.bicep \
+            --parameters infra/azure/parameters.${{ needs.setup.outputs.bicep_env }}.json
+
+  # README item 8. Reuses the exact plan approved above (no re-plan/re-approve drift).
+  apply-confluent:
+    needs: [setup, validate, plan-azure, plan-confluent]
+    if: needs.setup.outputs.should_apply == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.setup.outputs.gh_environment }}
+    defaults:
+      run:
+        working-directory: infra/confluent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ needs.setup.outputs.bicep_env }}
+          path: infra/confluent
+      - name: terraform init (real backend)
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TF_BACKEND_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
+            -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate"
+      - name: terraform apply (using the plan-confluent job's saved plan)
+        run: terraform apply -input=false -auto-approve tfplan
+
+  # README item 9 + closes the Stage 7 forward-reference for populating Key Vault secrets.
+  deploy-app:
+    needs: [setup, package, apply-azure, apply-confluent]
+    if: needs.setup.outputs.should_apply == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.setup.outputs.gh_environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/download-artifact@v4
+        with:
+          name: function-app-package
+          path: target/azure-functions
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get Key Vault name from Bicep deployment output
+        id: kv
+        run: |
+          KV_NAME=$(az deployment group show \
+            --resource-group java-functions-group \
+            --name main \
+            --query "properties.outputs.keyVaultName.value" -o tsv)
+          echo "name=${KV_NAME}" >> "$GITHUB_OUTPUT"
+
+      # README item 10: real secret values live only in GitHub Secrets and Key Vault, never in
+      # code. This closes Stage 7's "populated out-of-band... or a future Stage 8 automated step."
+      - name: Sync real secret values into Key Vault
+        run: |
+          az keyvault secret set --vault-name "${{ steps.kv.outputs.name }}" --name kafka-username --value "${{ secrets.KAFKA_CLIENT_API_KEY }}" --output none
+          az keyvault secret set --vault-name "${{ steps.kv.outputs.name }}" --name kafka-password --value "${{ secrets.KAFKA_CLIENT_API_SECRET }}" --output none
+          az keyvault secret set --vault-name "${{ steps.kv.outputs.name }}" --name resend-api-key --value "${{ secrets.RESEND_API_KEY }}" --output none
+
+      # Scope decision (docs/STAGE8_PLAN.md §4.2): reuses the existing azure-functions-maven-plugin
+      # `deploy` goal (provision-and-deploy upsert) rather than a hand-rolled zip-deploy script.
+      # Safe against the already Bicep-provisioned app (idempotent; only merges the one
+      # FUNCTIONS_EXTENSION_VERSION setting declared in pom.xml). -DfunctionAppName overrides
+      # pom.xml's hardcoded default per environment (see docs/STAGE8_PLAN.md §0).
+      - name: mvn azure-functions:deploy
+        run: |
+          mvn -B azure-functions:deploy \
+            -DfunctionAppName=${{ needs.setup.outputs.function_app_name }}
+
+  # README item 12.
+  smoke-test-kafka:
+    needs: [setup, deploy-app]
+    if: needs.setup.outputs.should_apply == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.setup.outputs.gh_environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Get Application Insights App ID from Bicep deployment output
+        id: ai
+        run: |
+          APP_ID=$(az monitor app-insights component show \
+            --resource-group java-functions-group \
+            --app "job-scraper-function-ai-${{ needs.setup.outputs.bicep_env }}" \
+            --query "appId" -o tsv)
+          echo "app_id=${APP_ID}" >> "$GITHUB_OUTPUT"
+      - name: Run smoke test
+        env:
+          RESOURCE_GROUP: java-functions-group
+          FUNCTION_APP_NAME: ${{ needs.setup.outputs.function_app_name }}
+          APP_INSIGHTS_APP_ID: ${{ steps.ai.outputs.app_id }}
+        run: bash scripts/smoke_test.sh
+
+

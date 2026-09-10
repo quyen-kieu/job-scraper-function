@@ -1,0 +1,16 @@
+# Normalize line endings across platforms; this workspace mixes Windows (local dev) and
+# Linux (GitHub Actions runners) — .sh files in particular MUST use LF or bash on the runner
+# will fail to parse them correctly.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.bicep text eol=lf
+*.tf text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+*.jar binary
+*.png binary
+*.pdf binary
+

@@ -1,0 +1,8 @@
+# Copy this file to a real .tfvars (gitignored) or export as TF_VAR_* environment variables.
+# Never commit real values.
+
+confluent_cloud_api_key    = "<confluent-cloud-org-api-key>"
+confluent_cloud_api_secret = "<confluent-cloud-org-api-secret>"
+confluent_environment_id   = "env-xxxxxx"
+confluent_cluster_id       = "lkc-xxxxxx"
+
