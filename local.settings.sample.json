@@ -43,9 +43,9 @@
     "AZURE_COSMOS_METRICS_CONTAINER": "monthly-metrics",
     "RESEND_ENABLED": "false",
     "RESEND_API_KEY": "<resend-api-key>",
-    "RESEND_FROM_EMAIL": "send@quyenkieu.com",
+    "RESEND_FROM_EMAIL": "send@domain.com",
     "RESEND_FROM_NAME": "Job Scraper",
-    "RESEND_TO_EMAIL": "quyen.learn.coding@gmail.com",
+    "RESEND_TO_EMAIL": "user@gmail.com",
     "RESEND_SUBJECT_PREFIX": "Job Scraper Daily Summary"
   }
 }

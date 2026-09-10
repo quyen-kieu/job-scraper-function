@@ -34,7 +34,7 @@ variable "topics" {
   EOT
   type = map(object({
     partitions_count = number
-    config            = map(string)
+    config           = map(string)
   }))
 }
 
