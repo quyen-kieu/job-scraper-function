@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "dev" },
+    "location": { "value": "westus" },
+    "baseName": { "value": "job-scraper-function" },
+    "storageContainerName": { "value": "job-scraper-raw" },
+    "cosmosDatabaseName": { "value": "job-scraper" },
+    "cosmosPostingsContainer": { "value": "job-postings" },
+    "cosmosObservationsContainer": { "value": "job-observations" },
+    "cosmosMetricsContainer": { "value": "monthly-metrics" },
+    "kafkaBootstrapServers": { "value": "pkc-57jzz.southcentralus.azure.confluent.cloud:9092" },
+    "resendFromEmail": { "value": "send@quyenkieu.com" },
+    "resendFromName": { "value": "Job Scraper" },
+    "resendToEmail": { "value": "quyen.learn.coding@gmail.com" },
+    "resendSubjectPrefix": { "value": "Job Scraper Daily Summary (dev)" },
+    "jobScraperDailyCron": { "value": "0 0 3 * * *" }
+  }
+}
+

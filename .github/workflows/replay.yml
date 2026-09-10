@@ -1,0 +1,92 @@
+name: replay
+
+# Stage 8, README item 13: "Add a manual replay workflow for a selected company and date range."
+#
+# SCOPE DECISION (docs/STAGE8_PLAN.md §4.3): this re-triggers a REAL, LIVE on-demand scrape via
+# the deployed OnDemandScrapeCommandProducer HTTP endpoint — it does NOT perform historical
+# reprocessing from already-stored raw/observation data. `MonthlyMetricRebuildService` (Stage 5)
+# exists specifically for rebuilding a month from job-observations after a normalization rule
+# change, but has no Function trigger by deliberate design (preserving the fixed function
+# topology). The from_date/to_date inputs below are accepted for forward compatibility and
+# documented as currently unused, rather than silently dropped or secretly wired to a new
+# undiscussed Function trigger.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Environment to trigger the replay against"
+        type: choice
+        options: [dev, production]
+        default: dev
+      company_id:
+        description: "Company ID to re-trigger a scrape for (must be enabled in JOB_SCRAPER_COMPANIES_*)"
+        type: string
+        required: true
+      from_date:
+        description: "(Currently unused — see workflow header) Historical replay start date, YYYY-MM-DD"
+        type: string
+        required: false
+      to_date:
+        description: "(Currently unused — see workflow header) Historical replay end date, YYYY-MM-DD"
+        type: string
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Warn if a historical date range was supplied (currently unused)
+        if: ${{ inputs.from_date != '' || inputs.to_date != '' }}
+        run: |
+          echo "::warning::from_date/to_date were supplied but this workflow only re-triggers a live on-demand scrape today (docs/STAGE8_PLAN.md §4.3) — the date range has no effect."
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - id: env
+        run: |
+          if [ "${{ inputs.target_environment }}" = "production" ]; then
+            echo "function_app_name=job-scraper-function-prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "function_app_name=job-scraper-function-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger on-demand scrape for ${{ inputs.company_id }}
+        run: |
+          set -euo pipefail
+          FUNCTION_APP_NAME="${{ steps.env.outputs.function_app_name }}"
+
+          FUNCTION_KEY=$(az functionapp function keys list \
+            --resource-group java-functions-group \
+            --name "${FUNCTION_APP_NAME}" \
+            --function-name OnDemandScrapeCommandProducer \
+            --query "default" -o tsv)
+
+          HOSTNAME=$(az functionapp show \
+            --resource-group java-functions-group \
+            --name "${FUNCTION_APP_NAME}" \
+            --query "defaultHostName" -o tsv)
+
+          echo "Triggering on-demand scrape for company '${{ inputs.company_id }}' against ${FUNCTION_APP_NAME}..."
+          HTTP_STATUS=$(curl -s -o /tmp/replay-response.json -w "%{http_code}" -X POST \
+            "https://${HOSTNAME}/api/scrape/trigger?companyId=${{ inputs.company_id }}&code=${FUNCTION_KEY}")
+
+          echo "Response (HTTP ${HTTP_STATUS}):"
+          cat /tmp/replay-response.json
+
+          if [ "${HTTP_STATUS}" != "200" ]; then
+            echo "::error::Replay trigger failed with HTTP ${HTTP_STATUS}"
+            exit 1
+          fi
+

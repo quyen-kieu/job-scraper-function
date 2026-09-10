@@ -1,0 +1,72 @@
+name: infra-validate
+
+# Stage 7 scope only: lint, build, and preview infrastructure changes on pull requests.
+# Deliberately does NOT apply/deploy anything, require approval, or touch application code —
+# that full pipeline (validate -> plan -> approval -> apply -> deploy app -> smoke test) is
+# Stage 8 and is intentionally not implemented yet (see docs/STAGE7_PLAN.md).
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-validate.yml"
+
+permissions:
+  id-token: write   # required for azure/login OIDC federated credential
+  contents: read
+
+jobs:
+  bicep-validate:
+    name: Validate Bicep (build + what-if)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Az CLI login (OIDC, no stored client secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: az bicep build (syntax/type check)
+        run: az bicep build --file infra/azure/main.bicep
+
+      - name: Preview changes (what-if, read-only)
+        run: |
+          az deployment group what-if \
+            --resource-group java-functions-group \
+            --template-file infra/azure/main.bicep \
+            --parameters infra/azure/parameters.dev.json
+
+  terraform-validate:
+    name: Validate Terraform (fmt + validate + plan)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/confluent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: terraform fmt (check only)
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no remote state; validate only)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform plan (read-only preview, requires real backend to run for real)
+        if: ${{ vars.TF_PLAN_ENABLED == 'true' }}
+        run: terraform plan -input=false
+        env:
+          TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
+          TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
+

@@ -1,0 +1,969 @@
+<html>
+<head>
+<title>README.md</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #cf8e6d;}
+.s1 { color: #bcbec4;}
+.s2 { color: #bcbec4;}
+.s3 { color: #c77dbb; font-style: italic;}
+.s4 { color: #6aab73;}
+.s5 { color: #56a8f5;}
+</style>
+</head>
+<body bgcolor="#1e1f22">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+README.md</font>
+</center></td></tr></table>
+<pre><span class="s0"># </span><span class="s2">Event-Driven Multi-Company Job Posting Scraper</span>
+
+<span class="s0">## </span><span class="s2">Goals</span>
+
+<span class="s0">- </span><span class="s2">Scrape job postings from multiple companies once per day.</span>
+<span class="s0">- </span><span class="s2">Measure job-title and job-level frequency by company and month.</span>
+<span class="s0">- </span><span class="s2">Use an existing Confluent Kafka broker as the event backbone.</span>
+<span class="s0">- </span><span class="s2">Preserve raw source data and normalized historical records.</span>
+
+<span class="s2">The design uses Java Spring Boot, Azure Functions, Azure Blob Storage, Azure Cosmos DB for NoSQL, Twilio SendGrid, GitHub Actions, and an existing Confluent Kafka broker. It avoids browser automation and residential proxies.</span>
+
+<span class="s0">## </span><span class="s2">Architecture overview</span>
+
+<span class="s0">```</span><span class="s3">mermaid</span>
+<span class="s4">flowchart LR</span>
+    <span class="s4">A[&quot;Daily Azure Timer&quot;] --&gt; B[&quot;Java Azure Function&lt;br/&gt;Command Producer&quot;]</span>
+    <span class="s4">B --&gt; C[(&quot;Confluent Kafka Broker&quot;)]</span>
+    <span class="s4">C --&gt; T[&quot;job.scrape.commands&quot;]</span>
+
+    <span class="s4">T --&gt; D[&quot;Spring Boot Scraper Consumer&quot;]</span>
+    <span class="s4">D --&gt; E[&quot;Company Scraper Registry&quot;]</span>
+    <span class="s4">E --&gt; F[&quot;HTTP Client + Jsoup&quot;]</span>
+    <span class="s4">F --&gt; G[&quot;Raw HTML/JSON&lt;br/&gt;Azure Blob Storage&quot;]</span>
+    <span class="s4">D --&gt; H[&quot;scrape.completed event&quot;]</span>
+    <span class="s4">H --&gt; C</span>
+
+    <span class="s4">C --&gt; U[&quot;job.scrape.completed&quot;]</span>
+    <span class="s4">U --&gt; I[&quot;Normalizer Consumer&quot;]</span>
+    <span class="s4">I --&gt; J[&quot;Canonical Job Posting&quot;]</span>
+    <span class="s4">J --&gt; K[&quot;job.postings.normalized&quot;]</span>
+    <span class="s4">K --&gt; C</span>
+
+    <span class="s4">K --&gt; L[&quot;Cosmos DB: job-postings&quot;]</span>
+    <span class="s4">K --&gt; M[&quot;Cosmos DB: job-observations&quot;]</span>
+
+    <span class="s4">K --&gt; N[&quot;Metrics Consumer&quot;]</span>
+    <span class="s4">N --&gt; O[&quot;Cosmos DB: monthly-metrics&quot;]</span>
+    <span class="s4">N --&gt; P[&quot;Daily Summary Event&quot;]</span>
+    <span class="s4">P --&gt; C</span>
+
+    <span class="s4">C --&gt; V[&quot;notifications.daily&quot;]</span>
+    <span class="s4">V --&gt; Q[&quot;SendGrid Email Consumer&quot;]</span>
+    <span class="s4">Q --&gt; R[&quot;Twilio SendGrid&quot;]</span>
+
+    <span class="s4">S[&quot;GitHub Repository&quot;] --&gt; W[&quot;GitHub Actions&quot;]</span>
+    <span class="s4">W --&gt; X[&quot;Build and Test&quot;]</span>
+    <span class="s4">W --&gt; Y[&quot;Deploy Function and Spring App&quot;]</span>
+    <span class="s4">W --&gt; Z[&quot;Deploy Bicep: Blob + Cosmos&quot;]</span>
+<span class="s0">```</span>
+
+<span class="s0">## </span><span class="s2">Event-driven data flow</span>
+
+<span class="s0">```</span><span class="s3">text</span>
+<span class="s4">Daily timer</span>
+  <span class="s4">-&gt; publish one scrape command per company</span>
+  <span class="s4">-&gt; scraper consumer fetches search and detail pages</span>
+  <span class="s4">-&gt; raw responses are written to Blob Storage</span>
+  <span class="s4">-&gt; scrape-completed event is published</span>
+  <span class="s4">-&gt; normalizer creates canonical job documents</span>
+  <span class="s4">-&gt; normalized events update Cosmos DB</span>
+  <span class="s4">-&gt; metrics consumer updates monthly aggregates</span>
+  <span class="s4">-&gt; daily summary event is published</span>
+  <span class="s4">-&gt; email consumer sends the SendGrid notification</span>
+<span class="s0">```</span>
+
+<span class="s2">The Kafka broker carries commands and facts. Blob Storage is the source-of-record for raw responses, while Cosmos DB stores queryable normalized data and metrics.</span>
+
+<span class="s0">## </span><span class="s2">Components</span>
+
+<span class="s0">| </span><span class="s1">Component </span><span class="s0">| </span><span class="s1">Responsibility </span><span class="s0">|</span>
+<span class="s0">|---|---|</span>
+<span class="s0">| </span><span class="s1">Azure Timer-triggered Function </span><span class="s0">| </span><span class="s1">Publishes daily scrape commands </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Spring Boot Kafka consumers </span><span class="s0">| </span><span class="s1">Scraping, normalization, metrics, and notifications </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Confluent Kafka </span><span class="s0">| </span><span class="s1">Durable event transport and replayable processing pipeline </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Azure Blob Storage </span><span class="s0">| </span><span class="s1">Raw HTML, JSON responses, and run artifacts </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Azure Cosmos DB for NoSQL </span><span class="s0">| </span><span class="s1">Current postings, observations, and monthly metrics </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Twilio SendGrid </span><span class="s0">| </span><span class="s1">Daily scrape summary email </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">GitHub Actions </span><span class="s0">| </span><span class="s1">Build, test, and deployment automation </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Bicep </span><span class="s0">| </span><span class="s1">Repeatable Azure infrastructure </span><span class="s0">|</span>
+
+<span class="s0">## </span><span class="s2">Topic design</span>
+
+<span class="s2">Use a clear event naming convention and keep commands separate from facts.</span>
+
+<span class="s0">| </span><span class="s1">Topic </span><span class="s0">| </span><span class="s1">Producer </span><span class="s0">| </span><span class="s1">Consumer </span><span class="s0">| </span><span class="s1">Key </span><span class="s0">| </span><span class="s1">Purpose </span><span class="s0">|</span>
+<span class="s0">|---|---|---|---|---|</span>
+<span class="s0">| </span><span class="s1">`job.scrape.commands` </span><span class="s0">| </span><span class="s1">Daily scheduler </span><span class="s0">| </span><span class="s1">Scraper workers </span><span class="s0">| </span><span class="s1">`companyId` </span><span class="s0">| </span><span class="s1">Requests one company scrape </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.scrape.completed` </span><span class="s0">| </span><span class="s1">Scraper workers </span><span class="s0">| </span><span class="s1">Normalizer </span><span class="s0">| </span><span class="s1">`companyId` </span><span class="s0">| </span><span class="s1">Reports raw scrape completion and Blob locations </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.postings.normalized` </span><span class="s0">| </span><span class="s1">Normalizer </span><span class="s0">| </span><span class="s1">Persistence and metrics consumers </span><span class="s0">| </span><span class="s1">`companyId:externalJobId` </span><span class="s0">| </span><span class="s1">Publishes canonical postings </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.metrics.monthly` </span><span class="s0">| </span><span class="s1">Metrics consumer </span><span class="s0">| </span><span class="s1">Reporting and summary consumers </span><span class="s0">| </span><span class="s1">`companyId:yyyy-MM` </span><span class="s0">| </span><span class="s1">Publishes updated monthly counts </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`notifications.daily` </span><span class="s0">| </span><span class="s1">Summary producer </span><span class="s0">| </span><span class="s1">Email consumer </span><span class="s0">| </span><span class="s1">`runId` </span><span class="s0">| </span><span class="s1">Requests the daily email </span><span class="s0">|</span>
+
+<span class="s2">Create a dead-letter topic for each processing topic, for example `job.scrape.commands.DLT`. Include retry headers or a retry-topic policy so temporary failures do not immediately become permanent failures.</span>
+
+<span class="s2">Event envelope</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;eventId&quot;: &quot;uuid&quot;,</span>
+  <span class="s4">&quot;eventType&quot;: &quot;JobPostingNormalized&quot;,</span>
+  <span class="s4">&quot;eventVersion&quot;: 1,</span>
+  <span class="s4">&quot;occurredAt&quot;: &quot;2026-08-15T10:00:00Z&quot;,</span>
+  <span class="s4">&quot;producer&quot;: &quot;job-normalizer&quot;,</span>
+  <span class="s4">&quot;correlationId&quot;: &quot;scrape-run-id&quot;,</span>
+  <span class="s4">&quot;companyId&quot;: &quot;mckesson&quot;,</span>
+  <span class="s4">&quot;payload&quot;: {}</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s2">Use stable keys to preserve ordering per company or posting. Configure consumers with explicit consumer-group names so each logical stage receives each event once per group.</span>
+
+<span class="s0">## </span><span class="s2">Confluent Kafka topic reference</span>
+
+<span class="s0">### </span><span class="s2">Cluster</span>
+
+<span class="s0">| </span><span class="s1">Setting </span><span class="s0">| </span><span class="s1">Value </span><span class="s0">|</span>
+<span class="s0">|---|---|</span>
+<span class="s0">| </span><span class="s1">Cluster name </span><span class="s0">| </span><span class="s1">`shared-kafka-dev-us-central1` </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Cloud provider / region </span><span class="s0">| </span><span class="s1">Azure / South Central US </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Bootstrap server </span><span class="s0">| </span><span class="s1">`pkc-57jzz.southcentralus.azure.confluent.cloud:9092` </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Security protocol </span><span class="s0">| </span><span class="s1">`SASL_SSL` </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">SASL mechanism </span><span class="s0">| </span><span class="s1">`PLAIN` </span><span class="s0">|</span>
+
+<span class="s0">### </span><span class="s2">Topic creation settings </span><span class="s1">(</span><span class="s2">all topics</span><span class="s1">)</span>
+
+<span class="s2">Every topic was created with the following shared baseline. Increase partitions only when throughput or parallelism requires it.</span>
+
+<span class="s0">| </span><span class="s1">Setting </span><span class="s0">| </span><span class="s1">Value </span><span class="s0">|</span>
+<span class="s0">|---|---|</span>
+<span class="s0">| </span><span class="s1">Partitions </span><span class="s0">| </span><span class="s1">`1` </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Cleanup policy </span><span class="s0">| </span><span class="s1">`Delete` </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Retention time </span><span class="s0">| </span><span class="s1">`604800000 ms` (7 days) </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Retention size </span><span class="s0">| </span><span class="s1">`-1` (unlimited by size) </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Max message bytes </span><span class="s0">| </span><span class="s1">`1048576` (1 MB) </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">Replication factor </span><span class="s0">| </span><span class="s1">Cluster default </span><span class="s0">|</span>
+
+<span class="s0">### </span><span class="s2">Primary topics</span>
+
+<span class="s0">| </span><span class="s1">Topic </span><span class="s0">| </span><span class="s1">Message key </span><span class="s0">| </span><span class="s1">Purpose </span><span class="s0">|</span>
+<span class="s0">|---|---|---|</span>
+<span class="s0">| </span><span class="s1">`job.scrape.commands` </span><span class="s0">| </span><span class="s1">`companyId` </span><span class="s0">| </span><span class="s1">Requests one company scrape per run </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.scrape.completed` </span><span class="s0">| </span><span class="s1">`companyId` </span><span class="s0">| </span><span class="s1">Reports scrape completion and Blob paths </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.postings.normalized` </span><span class="s0">| </span><span class="s1">`companyId:externalJobId` </span><span class="s0">| </span><span class="s1">Publishes canonical job posting events </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.metrics.monthly` </span><span class="s0">| </span><span class="s1">`companyId:yyyy-MM` </span><span class="s0">| </span><span class="s1">Publishes updated monthly metric counts </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`notifications.daily` </span><span class="s0">| </span><span class="s1">`runId` </span><span class="s0">| </span><span class="s1">Requests the daily summary email </span><span class="s0">|</span>
+
+<span class="s0">### </span><span class="s2">Dead-letter topics </span><span class="s1">(</span><span class="s2">DLT</span><span class="s1">)</span>
+
+<span class="s2">Each primary topic has a corresponding DLT. Messages are routed to the DLT after all retry attempts are exhausted.</span>
+
+<span class="s0">| </span><span class="s1">DLT topic </span><span class="s0">| </span><span class="s1">Source topic </span><span class="s0">| </span><span class="s1">Message key </span><span class="s0">|</span>
+<span class="s0">|---|---|---|</span>
+<span class="s0">| </span><span class="s1">`job.scrape.commands.DLT` </span><span class="s0">| </span><span class="s1">`job.scrape.commands` </span><span class="s0">| </span><span class="s1">`companyId` (same as source) </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.scrape.completed.DLT` </span><span class="s0">| </span><span class="s1">`job.scrape.completed` </span><span class="s0">| </span><span class="s1">`companyId` (same as source) </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.postings.normalized.DLT` </span><span class="s0">| </span><span class="s1">`job.postings.normalized` </span><span class="s0">| </span><span class="s1">`companyId:externalJobId` (same as source) </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.metrics.monthly.DLT` </span><span class="s0">| </span><span class="s1">`job.metrics.monthly` </span><span class="s0">| </span><span class="s1">`companyId:yyyy-MM` (same as source) </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`notifications.daily.DLT` </span><span class="s0">| </span><span class="s1">`notifications.daily` </span><span class="s0">| </span><span class="s1">`runId` (same as source) </span><span class="s0">|</span>
+
+<span class="s0">### </span><span class="s2">Standard event envelope</span>
+
+<span class="s2">Every value message uses this common outer envelope. The `payload` field contains topic-specific data.</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;eventId&quot;: &quot;uuid&quot;,</span>
+  <span class="s4">&quot;eventType&quot;: &quot;ScrapeCompanyCommand&quot;,</span>
+  <span class="s4">&quot;eventVersion&quot;: 1,</span>
+  <span class="s4">&quot;occurredAt&quot;: &quot;2026-08-16T03:00:00Z&quot;,</span>
+  <span class="s4">&quot;producer&quot;: &quot;job-scraper-function&quot;,</span>
+  <span class="s4">&quot;correlationId&quot;: &quot;run-2026-08-16&quot;,</span>
+  <span class="s4">&quot;companyId&quot;: &quot;mckesson&quot;,</span>
+  <span class="s4">&quot;payload&quot;: {}</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">### </span><span class="s2">Data contracts </span><span class="s1">(</span><span class="s2">JSON Schema — Confluent Schema Registry</span><span class="s1">)</span>
+
+<span class="s2">Use </span><span class="s1">**</span><span class="s2">JSON Schema Draft 07</span><span class="s1">** </span><span class="s2">for all contracts. Schema context</span><span class="s1">: </span><span class="s2">`default`. Register each `-key` and `-value` subject separately under the topic's </span><span class="s1">**</span><span class="s2">Data contract</span><span class="s1">** </span><span class="s2">tab.</span>
+
+<span class="s0">---</span>
+
+<span class="s0">#### </span><span class="s2">`job.scrape.commands-key`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;JobScrapeCommandsKey&quot;,</span>
+  <span class="s4">&quot;description&quot;: &quot;Kafka message key for job.scrape.commands; keyed by companyId to preserve per-company ordering.&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;string&quot;,</span>
+  <span class="s4">&quot;minLength&quot;: 1,</span>
+  <span class="s4">&quot;maxLength&quot;: 128,</span>
+  <span class="s4">&quot;pattern&quot;: &quot;^[a-z0-9][a-z0-9-]*$&quot;,</span>
+  <span class="s4">&quot;examples&quot;: [&quot;mckesson&quot;, &quot;gm-financial&quot;, &quot;lockheed-martin&quot;]</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">#### </span><span class="s2">`job.scrape.commands-value`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;ScrapeCompanyCommandEnvelope&quot;,</span>
+  <span class="s4">&quot;description&quot;: &quot;Event envelope for requesting one company scrape run.&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+  <span class="s4">&quot;additionalProperties&quot;: false,</span>
+  <span class="s4">&quot;required&quot;: [&quot;eventId&quot;,&quot;eventType&quot;,&quot;eventVersion&quot;,&quot;occurredAt&quot;,&quot;producer&quot;,&quot;correlationId&quot;,&quot;companyId&quot;,&quot;payload&quot;],</span>
+  <span class="s4">&quot;properties&quot;: {</span>
+    <span class="s4">&quot;eventId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;eventType&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;const&quot;: &quot;ScrapeCompanyCommand&quot; },</span>
+    <span class="s4">&quot;eventVersion&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1 },</span>
+    <span class="s4">&quot;occurredAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+    <span class="s4">&quot;producer&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;correlationId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;companyId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1, &quot;maxLength&quot;: 128, &quot;pattern&quot;: &quot;^[a-z0-9][a-z0-9-]*$&quot; },</span>
+    <span class="s4">&quot;payload&quot;: {</span>
+      <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+      <span class="s4">&quot;additionalProperties&quot;: false,</span>
+      <span class="s4">&quot;required&quot;: [&quot;runId&quot;,&quot;companyId&quot;,&quot;requestedAt&quot;,&quot;attempt&quot;],</span>
+      <span class="s4">&quot;properties&quot;: {</span>
+        <span class="s4">&quot;runId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;companyId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1, &quot;maxLength&quot;: 128, &quot;pattern&quot;: &quot;^[a-z0-9][a-z0-9-]*$&quot; },</span>
+        <span class="s4">&quot;requestedAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+        <span class="s4">&quot;attempt&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1 }</span>
+      <span class="s4">}</span>
+    <span class="s4">}</span>
+  <span class="s4">}</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">---</span>
+
+<span class="s0">#### </span><span class="s2">`job.scrape.completed-key`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;JobScrapeCompletedKey&quot;,</span>
+  <span class="s4">&quot;description&quot;: &quot;Kafka message key for job.scrape.completed; keyed by companyId.&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;string&quot;,</span>
+  <span class="s4">&quot;minLength&quot;: 1,</span>
+  <span class="s4">&quot;maxLength&quot;: 128</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">#### </span><span class="s2">`job.scrape.completed-value`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;JobScrapeCompletedValue&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+  <span class="s4">&quot;additionalProperties&quot;: false,</span>
+  <span class="s4">&quot;required&quot;: [&quot;eventId&quot;,&quot;eventType&quot;,&quot;eventVersion&quot;,&quot;occurredAt&quot;,&quot;producer&quot;,&quot;correlationId&quot;,&quot;companyId&quot;,&quot;payload&quot;],</span>
+  <span class="s4">&quot;properties&quot;: {</span>
+    <span class="s4">&quot;eventId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;eventType&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;const&quot;: &quot;ScrapeCompletedEvent&quot; },</span>
+    <span class="s4">&quot;eventVersion&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1 },</span>
+    <span class="s4">&quot;occurredAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+    <span class="s4">&quot;producer&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;correlationId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;companyId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;payload&quot;: {</span>
+      <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+      <span class="s4">&quot;additionalProperties&quot;: false,</span>
+      <span class="s4">&quot;required&quot;: [&quot;runId&quot;,&quot;companyId&quot;,&quot;startedAt&quot;,&quot;completedAt&quot;,&quot;searchPagesFetched&quot;,&quot;detailPagesFetched&quot;,&quot;blobPaths&quot;,&quot;errors&quot;],</span>
+      <span class="s4">&quot;properties&quot;: {</span>
+        <span class="s4">&quot;runId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;companyId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;startedAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+        <span class="s4">&quot;completedAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+        <span class="s4">&quot;searchPagesFetched&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+        <span class="s4">&quot;detailPagesFetched&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+        <span class="s4">&quot;blobPaths&quot;: { &quot;type&quot;: &quot;array&quot;, &quot;items&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 } },</span>
+        <span class="s4">&quot;errors&quot;: { &quot;type&quot;: &quot;array&quot;, &quot;items&quot;: { &quot;type&quot;: &quot;string&quot; } }</span>
+      <span class="s4">}</span>
+    <span class="s4">}</span>
+  <span class="s4">}</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">---</span>
+
+<span class="s0">#### </span><span class="s2">`job.postings.normalized-key`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;JobPostingsNormalizedKey&quot;,</span>
+  <span class="s4">&quot;description&quot;: &quot;Kafka message key for job.postings.normalized; format is companyId:externalJobId.&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;string&quot;,</span>
+  <span class="s4">&quot;pattern&quot;: &quot;^[a-z0-9-]+:[^:]+$&quot;</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">#### </span><span class="s2">`job.postings.normalized-value`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;JobPostingsNormalizedValue&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+  <span class="s4">&quot;additionalProperties&quot;: false,</span>
+  <span class="s4">&quot;required&quot;: [&quot;eventId&quot;,&quot;eventType&quot;,&quot;eventVersion&quot;,&quot;occurredAt&quot;,&quot;producer&quot;,&quot;correlationId&quot;,&quot;companyId&quot;,&quot;payload&quot;],</span>
+  <span class="s4">&quot;properties&quot;: {</span>
+    <span class="s4">&quot;eventId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;eventType&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;const&quot;: &quot;JobPostingNormalized&quot; },</span>
+    <span class="s4">&quot;eventVersion&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1 },</span>
+    <span class="s4">&quot;occurredAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+    <span class="s4">&quot;producer&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;correlationId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;companyId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;payload&quot;: {</span>
+      <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+      <span class="s4">&quot;additionalProperties&quot;: false,</span>
+      <span class="s4">&quot;required&quot;: [&quot;id&quot;,&quot;companyId&quot;,&quot;externalJobId&quot;,&quot;titleRaw&quot;,&quot;titleNormalized&quot;,&quot;jobLevel&quot;,&quot;location&quot;,&quot;datePosted&quot;,&quot;firstSeenAt&quot;,&quot;lastSeenAt&quot;,&quot;isActive&quot;,&quot;contentHash&quot;,&quot;schemaVersion&quot;],</span>
+      <span class="s4">&quot;properties&quot;: {</span>
+        <span class="s4">&quot;id&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;companyId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;externalJobId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;titleRaw&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;titleNormalized&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;jobLevel&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;location&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;datePosted&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date&quot; },</span>
+        <span class="s4">&quot;firstSeenAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+        <span class="s4">&quot;lastSeenAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+        <span class="s4">&quot;isActive&quot;: { &quot;type&quot;: &quot;boolean&quot; },</span>
+        <span class="s4">&quot;contentHash&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;schemaVersion&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1 }</span>
+      <span class="s4">}</span>
+    <span class="s4">}</span>
+  <span class="s4">}</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">---</span>
+
+<span class="s0">#### </span><span class="s2">`job.metrics.monthly-key`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;JobMetricsMonthlyKey&quot;,</span>
+  <span class="s4">&quot;description&quot;: &quot;Kafka message key for job.metrics.monthly; format is companyId:yyyy-MM.&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;string&quot;,</span>
+  <span class="s4">&quot;pattern&quot;: &quot;^[a-z0-9-]+:[0-9]{4}-[0-9]{2}$&quot;</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">#### </span><span class="s2">`job.metrics.monthly-value`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;JobMetricsMonthlyValue&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+  <span class="s4">&quot;additionalProperties&quot;: false,</span>
+  <span class="s4">&quot;required&quot;: [&quot;eventId&quot;,&quot;eventType&quot;,&quot;eventVersion&quot;,&quot;occurredAt&quot;,&quot;producer&quot;,&quot;correlationId&quot;,&quot;companyId&quot;,&quot;payload&quot;],</span>
+  <span class="s4">&quot;properties&quot;: {</span>
+    <span class="s4">&quot;eventId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;eventType&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;const&quot;: &quot;MonthlyMetricUpdated&quot; },</span>
+    <span class="s4">&quot;eventVersion&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1 },</span>
+    <span class="s4">&quot;occurredAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+    <span class="s4">&quot;producer&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;correlationId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;companyId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;payload&quot;: {</span>
+      <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+      <span class="s4">&quot;additionalProperties&quot;: false,</span>
+      <span class="s4">&quot;required&quot;: [&quot;companyId&quot;,&quot;month&quot;,&quot;normalizedTitle&quot;,&quot;jobLevel&quot;,&quot;postingCount&quot;,&quot;uniquePostingCount&quot;,&quot;lastCalculatedAt&quot;],</span>
+      <span class="s4">&quot;properties&quot;: {</span>
+        <span class="s4">&quot;companyId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;month&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;pattern&quot;: &quot;^[0-9]{4}-[0-9]{2}$&quot; },</span>
+        <span class="s4">&quot;normalizedTitle&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;jobLevel&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;postingCount&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+        <span class="s4">&quot;uniquePostingCount&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+        <span class="s4">&quot;lastCalculatedAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; }</span>
+      <span class="s4">}</span>
+    <span class="s4">}</span>
+  <span class="s4">}</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">---</span>
+
+<span class="s0">#### </span><span class="s2">`notifications.daily-key`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;NotificationsDailyKey&quot;,</span>
+  <span class="s4">&quot;description&quot;: &quot;Kafka message key for notifications.daily; keyed by runId.&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;string&quot;,</span>
+  <span class="s4">&quot;minLength&quot;: 1</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">#### </span><span class="s2">`notifications.daily-value`</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;NotificationsDailyValue&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+  <span class="s4">&quot;additionalProperties&quot;: false,</span>
+  <span class="s4">&quot;required&quot;: [&quot;eventId&quot;,&quot;eventType&quot;,&quot;eventVersion&quot;,&quot;occurredAt&quot;,&quot;producer&quot;,&quot;correlationId&quot;,&quot;companyId&quot;,&quot;payload&quot;],</span>
+  <span class="s4">&quot;properties&quot;: {</span>
+    <span class="s4">&quot;eventId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;eventType&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;const&quot;: &quot;DailyNotificationRequested&quot; },</span>
+    <span class="s4">&quot;eventVersion&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1 },</span>
+    <span class="s4">&quot;occurredAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+    <span class="s4">&quot;producer&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;correlationId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;companyId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;payload&quot;: {</span>
+      <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+      <span class="s4">&quot;additionalProperties&quot;: false,</span>
+      <span class="s4">&quot;required&quot;: [&quot;runId&quot;,&quot;summaryDate&quot;,&quot;companiesProcessed&quot;,&quot;newCount&quot;,&quot;changedCount&quot;,&quot;inactiveCount&quot;,&quot;failures&quot;],</span>
+      <span class="s4">&quot;properties&quot;: {</span>
+        <span class="s4">&quot;runId&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+        <span class="s4">&quot;summaryDate&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date&quot; },</span>
+        <span class="s4">&quot;companiesProcessed&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+        <span class="s4">&quot;newCount&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+        <span class="s4">&quot;changedCount&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+        <span class="s4">&quot;inactiveCount&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+        <span class="s4">&quot;failures&quot;: { &quot;type&quot;: &quot;array&quot;, &quot;items&quot;: { &quot;type&quot;: &quot;string&quot; } }</span>
+      <span class="s4">}</span>
+    <span class="s4">}</span>
+  <span class="s4">}</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">---</span>
+
+<span class="s0">#### </span><span class="s2">DLT contract pattern</span>
+
+<span class="s2">All DLT topics share the same value schema structure. Only `originalTopic` differs per topic.</span>
+
+<span class="s1">**</span><span class="s2">`</span><span class="s1">*</span><span class="s2">.DLT-key`</span><span class="s1">** </span><span class="s2">— same key type as the source topic </span><span class="s1">(</span><span class="s2">see source topic key contract above</span><span class="s1">)</span><span class="s2">.</span>
+
+<span class="s1">**</span><span class="s2">`</span><span class="s1">*</span><span class="s2">.DLT-value`</span><span class="s1">** </span><span class="s2">— envelope that wraps the original failed event alongside failure metadata</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,</span>
+  <span class="s4">&quot;title&quot;: &quot;DeadLetterEnvelope&quot;,</span>
+  <span class="s4">&quot;type&quot;: &quot;object&quot;,</span>
+  <span class="s4">&quot;additionalProperties&quot;: false,</span>
+  <span class="s4">&quot;required&quot;: [&quot;failedAt&quot;,&quot;consumerGroup&quot;,&quot;originalTopic&quot;,&quot;originalPartition&quot;,&quot;originalOffset&quot;,&quot;originalKey&quot;,&quot;retryCount&quot;,&quot;errorType&quot;,&quot;errorMessage&quot;,&quot;originalEvent&quot;],</span>
+  <span class="s4">&quot;properties&quot;: {</span>
+    <span class="s4">&quot;failedAt&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;format&quot;: &quot;date-time&quot; },</span>
+    <span class="s4">&quot;consumerGroup&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;originalTopic&quot;: {</span>
+      <span class="s4">&quot;type&quot;: &quot;string&quot;,</span>
+      <span class="s4">&quot;enum&quot;: [</span>
+        <span class="s4">&quot;job.scrape.commands&quot;,</span>
+        <span class="s4">&quot;job.scrape.completed&quot;,</span>
+        <span class="s4">&quot;job.postings.normalized&quot;,</span>
+        <span class="s4">&quot;job.metrics.monthly&quot;,</span>
+        <span class="s4">&quot;notifications.daily&quot;</span>
+      <span class="s4">]</span>
+    <span class="s4">},</span>
+    <span class="s4">&quot;originalPartition&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+    <span class="s4">&quot;originalOffset&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+    <span class="s4">&quot;originalKey&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;retryCount&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 0 },</span>
+    <span class="s4">&quot;errorType&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;errorMessage&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 1 },</span>
+    <span class="s4">&quot;originalEvent&quot;: { &quot;type&quot;: &quot;object&quot; }</span>
+  <span class="s4">}</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s2">For each DLT subject replace the `originalTopic` `enum` with a single `const` matching the source topic</span><span class="s1">:</span>
+
+<span class="s0">| </span><span class="s1">DLT subject </span><span class="s0">| </span><span class="s1">`originalTopic` const value </span><span class="s0">|</span>
+<span class="s0">|---|---|</span>
+<span class="s0">| </span><span class="s1">`job.scrape.commands.DLT-value` </span><span class="s0">| </span><span class="s1">`&quot;job.scrape.commands&quot;` </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.scrape.completed.DLT-value` </span><span class="s0">| </span><span class="s1">`&quot;job.scrape.completed&quot;` </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.postings.normalized.DLT-value` </span><span class="s0">| </span><span class="s1">`&quot;job.postings.normalized&quot;` </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`job.metrics.monthly.DLT-value` </span><span class="s0">| </span><span class="s1">`&quot;job.metrics.monthly&quot;` </span><span class="s0">|</span>
+<span class="s0">| </span><span class="s1">`notifications.daily.DLT-value` </span><span class="s0">| </span><span class="s1">`&quot;notifications.daily&quot;` </span><span class="s0">|</span>
+
+<span class="s0">## </span><span class="s2">Stages</span>
+
+<span class="s0">### </span><span class="s2">Stage 1 â€” Java Spring Boot Azure Function foundation</span>
+
+<span class="s0">1. </span><span class="s2">Create the Maven Java Azure Functions project.</span>
+<span class="s0">2. </span><span class="s2">Use Java 21 consistently in the local JDK, `pom.xml`, and Azure runtime configuration.</span>
+<span class="s0">3. </span><span class="s2">Add Spring Boot dependencies and initialize the Spring context once per function instance.</span>
+<span class="s0">4. </span><span class="s2">Keep the Azure Timer function thin; it should publish commands rather than scrape directly.</span>
+<span class="s0">5. </span><span class="s2">Add local configuration and environment-variable handling.</span>
+<span class="s0">6. </span><span class="s2">Add unit-test and fixture directories.</span>
+
+<span class="s2">The Spring Boot application should expose separate services for the command producer, scraper consumer, normalizer, metrics consumer, and email consumer. Avoid a single class that performs every stage.</span>
+
+<span class="s0">### </span><span class="s2">Stage 2 â€” Kafka configuration and topics</span>
+
+<span class="s0">1. </span><span class="s2">Confirm the existing Confluent broker address, security protocol, SASL mechanism, username, and password or API key.</span>
+<span class="s0">2. </span><span class="s2">Store broker credentials in local environment variables or secret storage; never commit them.</span>
+<span class="s0">3. </span><span class="s2">Configure `bootstrap.servers`, `security.protocol`, `sasl.mechanism`, and the SASL credentials.</span>
+<span class="s0">4. </span><span class="s2">Create the topics listed above with an appropriate partition count and replication factor for the existing broker.</span>
+<span class="s0">5. </span><span class="s2">Create separate consumer groups for scraping, normalization, persistence, metrics, and email.</span>
+<span class="s0">6. </span><span class="s2">Configure `acks=all`, idempotent producers, retries, and delivery timeouts.</span>
+<span class="s0">7. </span><span class="s2">Configure consumer `enable.auto.commit=false` and commit offsets only after successful processing.</span>
+<span class="s0">8. </span><span class="s2">Configure retry and dead-letter handling.</span>
+<span class="s0">9. </span><span class="s2">Add a correlation ID and event ID to every message.</span>
+<span class="s0">10. </span><span class="s2">Test producing and consuming a sample `job.scrape.commands` event before adding the scraper.</span>
+
+<span class="s2">For a small daily workload, start with one or a small number of partitions per topic. Increase partitions only when parallelism or throughput requires it. The key design requirement is that the key keeps related events ordered.</span>
+
+<span class="s0">### </span><span class="s2">Stage 3 â€” Event-driven scraping</span>
+
+<span class="s0">1. </span><span class="s2">The timer producer loads enabled companies from configuration.</span>
+<span class="s0">2. </span><span class="s2">It publishes one `ScrapeCompanyCommand` per company to `job.scrape.commands`.</span>
+<span class="s0">3. </span><span class="s2">The scraper consumer receives a command and selects the matching `CompanyScraper` implementation.</span>
+<span class="s0">4. </span><span class="s2">The company scraper fetches search pages and job-detail pages using Java HTTP Client.</span>
+<span class="s0">5. </span><span class="s2">Jackson parses the JSON envelope and Jsoup parses the embedded HTML.</span>
+<span class="s0">6. </span><span class="s2">Raw search responses and detail HTML are written to Blob Storage.</span>
+<span class="s0">7. </span><span class="s2">The consumer publishes `job.scrape.completed` with the run ID, company ID, counts, errors, and Blob paths.</span>
+<span class="s0">8. </span><span class="s2">Failed work is retried and eventually sent to the dead-letter topic.</span>
+
+<span class="s2">For McKesson, use `data-job-id` as the stable external ID. Important response metadata includes `data-total-job-results`, `data-total-pages`, `data-current-page`, `data-records-per-page`, `data-ajax-url`, and `data-ajax-post-url`.</span>
+
+<span class="s0">### </span><span class="s2">Stage 4 â€” Blob Storage and Cosmos DB</span>
+
+<span class="s2">Blob layout</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">text</span>
+<span class="s4">raw/{companyId}/{yyyy}/{MM}/{dd}/{runId}/search-page-1.json</span>
+<span class="s4">raw/{companyId}/{yyyy}/{MM}/{dd}/{runId}/job-{externalJobId}.html</span>
+<span class="s4">normalized/{companyId}/{yyyy}/{MM}/{dd}/{runId}/run-summary.json</span>
+<span class="s0">```</span>
+
+<span class="s2">Use one Cosmos database with three containers</span><span class="s1">:</span>
+
+<span class="s0">#### </span><span class="s2">`job-postings`</span>
+
+<span class="s2">One current normalized document per posting. The partition key</span><span class="s1">: </span><span class="s2">`/companyId`.</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;id&quot;: &quot;mckesson-99215825472&quot;,</span>
+  <span class="s4">&quot;companyId&quot;: &quot;mckesson&quot;,</span>
+  <span class="s4">&quot;externalJobId&quot;: &quot;99215825472&quot;,</span>
+  <span class="s4">&quot;titleRaw&quot;: &quot;Lead Data Architect (Healthcare)&quot;,</span>
+  <span class="s4">&quot;titleNormalized&quot;: &quot;Data Architect&quot;,</span>
+  <span class="s4">&quot;jobLevel&quot;: &quot;Lead&quot;,</span>
+  <span class="s4">&quot;location&quot;: &quot;Irving, TX&quot;,</span>
+  <span class="s4">&quot;datePosted&quot;: &quot;2026-08-14&quot;,</span>
+  <span class="s4">&quot;firstSeenAt&quot;: &quot;2026-08-15T10:00:00Z&quot;,</span>
+  <span class="s4">&quot;lastSeenAt&quot;: &quot;2026-08-15T10:00:00Z&quot;,</span>
+  <span class="s4">&quot;isActive&quot;: true,</span>
+  <span class="s4">&quot;contentHash&quot;: &quot;sha256:...&quot;,</span>
+  <span class="s4">&quot;schemaVersion&quot;: 1</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s0">#### </span><span class="s2">`job-observations`</span>
+
+<span class="s2">One document per posting observed per daily run. Store `companyId`, `jobId`, `observedAt`, `datePosted`, normalized title, job level, content hash, and scrape run ID.</span>
+
+<span class="s0">#### </span><span class="s2">`monthly-metrics`</span>
+
+<span class="s2">Precomputed documents keyed by company, month, normalized title, and job level. The partition key</span><span class="s1">: </span><span class="s2">`/month`.</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;id&quot;: &quot;mckesson-2026-08-data-architect-lead&quot;,</span>
+  <span class="s4">&quot;companyId&quot;: &quot;mckesson&quot;,</span>
+  <span class="s4">&quot;month&quot;: &quot;2026-08&quot;,</span>
+  <span class="s4">&quot;normalizedTitle&quot;: &quot;Data Architect&quot;,</span>
+  <span class="s4">&quot;jobLevel&quot;: &quot;Lead&quot;,</span>
+  <span class="s4">&quot;postingCount&quot;: 4,</span>
+  <span class="s4">&quot;uniquePostingCount&quot;: 4</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s2">The persistence consumer should be idempotent. Use the event ID, company ID, and external job ID to prevent duplicate writes when Kafka redelivers an event.</span>
+
+<span class="s0">### </span><span class="s2">Stage 5 â€” Monthly metrics</span>
+
+<span class="s0">1. </span><span class="s2">Consume `job.postings.normalized` in a dedicated metrics consumer group.</span>
+<span class="s0">2. </span><span class="s2">Decide whether the metric counts by `datePosted` or `firstSeenAt`.</span>
+<span class="s0">3. </span><span class="s2">Normalize titles consistently before aggregation.</span>
+<span class="s0">4. </span><span class="s2">Derive a job level using explicit rules and retain the raw title.</span>
+<span class="s0">5. </span><span class="s2">Upsert a monthly metric document using company, month, title, and level.</span>
+<span class="s0">6. </span><span class="s2">Publish a `job.metrics.monthly` event after successful updates.</span>
+<span class="s0">7. </span><span class="s2">Rebuild a month from `job-observations` when normalization rules change.</span>
+
+<span class="s0">### </span><span class="s2">Stage 6 â€” Daily email with Twilio SendGrid</span>
+
+<span class="s0">1. </span><span class="s2">Consume completed scrape and metrics events.</span>
+<span class="s0">2. </span><span class="s2">Build a daily summary containing companies processed, new postings, changed postings, inactive postings, failures, top titles, and top job levels.</span>
+<span class="s0">3. </span><span class="s2">Publish a `notifications.daily` event with a unique run ID.</span>
+<span class="s0">4. </span><span class="s2">Consume that event in a dedicated email consumer group.</span>
+<span class="s0">5. </span><span class="s2">Send the message with the official SendGrid Java library.</span>
+<span class="s0">6. </span><span class="s2">Store the API key as an Azure Function or Spring application setting.</span>
+<span class="s0">7. </span><span class="s2">Retry temporary failures and prevent duplicate emails for the same run ID.</span>
+
+<span class="s2">The SendGrid free trial is limited and should be treated as a development allowance, not a permanent free tier.</span>
+
+<span class="s0">### </span><span class="s2">Stage 7 – Infrastructure as Code for Azure and Confluent</span>
+
+<span class="s2">Use a hybrid infrastructure automation approach</span><span class="s1">:</span>
+<span class="s0">- </span><span class="s1">**</span><span class="s2">Bicep</span><span class="s1">** </span><span class="s2">manages Azure-native resources.</span>
+<span class="s0">- </span><span class="s1">**</span><span class="s2">Terraform</span><span class="s1">** </span><span class="s2">manages Confluent Kafka resources.</span>
+<span class="s0">- </span><span class="s1">**</span><span class="s2">GitHub Actions</span><span class="s1">** </span><span class="s2">orchestrates validation, planning, approval, deployment, and smoke tests.</span>
+
+<span class="s1">**</span><span class="s2">Bicep </span><span class="s1">(</span><span class="s2">Azure resources</span><span class="s1">):**</span>
+<span class="s0">1. </span><span class="s2">Create `infra/azure/main.bicep` with modules for Function App, Storage, Cosmos DB, Key Vault, and monitoring.</span>
+<span class="s0">2. </span><span class="s2">Parameterize resource names, locations, SKUs, and environment-specific settings.</span>
+<span class="s0">3. </span><span class="s2">Use managed identities for inter-resource and Azure-to-Confluent authentication.</span>
+<span class="s0">4. </span><span class="s2">Outputs should expose connection strings, endpoint URIs, and identity details for app settings wiring.</span>
+
+<span class="s1">**</span><span class="s2">Terraform </span><span class="s1">(</span><span class="s2">Confluent Kafka resources</span><span class="s1">):**</span>
+<span class="s0">1. </span><span class="s2">Create `infra/confluent/main.tf` to manage the Confluent broker, topics, service accounts, API keys, and ACLs.</span>
+<span class="s0">2. </span><span class="s2">Parameterize cluster details, topic partition counts, replication factors, and retention policies.</span>
+<span class="s0">3. </span><span class="s2">Use Terraform Cloud or Azure Storage backend for remote state.</span>
+<span class="s0">4. </span><span class="s2">Create separate service accounts for scraper, normalizer, metrics, and email consumers.</span>
+<span class="s0">5. </span><span class="s2">Apply fine-grained ACLs so each consumer group has read access only to its required topics.</span>
+
+<span class="s1">**</span><span class="s2">GitHub Actions CI/CD pipeline</span><span class="s1">:**</span>
+<span class="s0">1. </span><span class="s2">Validate Bicep syntax and Terraform format on every pull request.</span>
+<span class="s0">2. </span><span class="s2">Run `terraform plan` and capture Confluent resource diffs.</span>
+<span class="s0">3. </span><span class="s2">Run `az bicep build` or `what-if` to preview Azure changes.</span>
+<span class="s0">4. </span><span class="s2">Require manual approval before applying infrastructure changes to production.</span>
+<span class="s0">5. </span><span class="s2">Apply Bicep to deploy Azure resources.</span>
+<span class="s0">6. </span><span class="s2">Apply Terraform to create/update Confluent resources.</span>
+<span class="s0">7. </span><span class="s2">Deploy the Java Function App artifact and update app settings.</span>
+<span class="s0">8. </span><span class="s2">Run a smoke test that publishes a test scrape command and verifies the expected event path.</span>
+
+<span class="s1">**</span><span class="s2">Repository layout</span><span class="s1">:**</span>
+<span class="s0">```</span>
+<span class="s4">infra/</span>
+  <span class="s4">azure/</span>
+    <span class="s4">main.bicep</span>
+    <span class="s4">parameters.json</span>
+    <span class="s4">modules/</span>
+      <span class="s4">function-app.bicep</span>
+      <span class="s4">storage.bicep</span>
+      <span class="s4">cosmos.bicep</span>
+      <span class="s4">keyvault.bicep</span>
+      <span class="s4">monitoring.bicep</span>
+  <span class="s4">confluent/</span>
+    <span class="s4">main.tf</span>
+    <span class="s4">variables.tf</span>
+    <span class="s4">outputs.tf</span>
+    <span class="s4">terraform.tfvars.example</span>
+    <span class="s4">modules/</span>
+      <span class="s4">cluster/</span>
+      <span class="s4">topics/</span>
+      <span class="s4">service-accounts/</span>
+      <span class="s4">acls/</span>
+<span class="s4">.github/</span>
+  <span class="s4">workflows/</span>
+    <span class="s4">deploy.yml</span>
+<span class="s0">```</span>
+
+<span class="s1">**</span><span class="s2">Key practices</span><span class="s1">:**</span>
+<span class="s0">- </span><span class="s2">Store Confluent API credentials in GitHub Secrets, never in Terraform files.</span>
+<span class="s0">- </span><span class="s2">Use Azure Key Vault to store Kafka credentials at runtime; inject them into Function App settings during deployment.</span>
+<span class="s0">- </span><span class="s2">Keep infrastructure state remote </span><span class="s1">(</span><span class="s2">Terraform Cloud or Azure Storage backend</span><span class="s1">)</span><span class="s2">.</span>
+<span class="s0">- </span><span class="s2">Version both Bicep and Terraform templates in Git.</span>
+<span class="s0">- </span><span class="s2">Run infrastructure and app deployment as separate steps so app releases do not depend on infrastructure changes.</span>
+
+<span class="s0">### </span><span class="s2">Stage 8 – GitHub Actions CI/CD for application and infrastructure deployment</span>
+
+<span class="s2">Pipeline</span><span class="s1">:</span>
+
+<span class="s0">```</span>
+<span class="s4">validate</span>
+  <span class="s4">-&gt; unit-tests</span>
+  <span class="s4">-&gt; package</span>
+  <span class="s4">-&gt; plan-azure</span>
+  <span class="s4">-&gt; plan-confluent</span>
+  <span class="s4">-&gt; approval-gate</span>
+  <span class="s4">-&gt; apply-azure</span>
+  <span class="s4">-&gt; apply-confluent</span>
+  <span class="s4">-&gt; deploy-app</span>
+  <span class="s4">-&gt; smoke-test-kafka</span>
+<span class="s0">```</span>
+
+<span class="s0">1. </span><span class="s2">Build and test the Maven project on pull requests.</span>
+<span class="s0">2. </span><span class="s2">Validate topic names, consumer groups, and configuration templates.</span>
+<span class="s0">3. </span><span class="s2">Build the Azure Functions and Spring Boot artifacts.</span>
+<span class="s0">4. </span><span class="s2">Run `terraform plan` for Confluent resources.</span>
+<span class="s0">5. </span><span class="s2">Run Bicep `build` or Azure `what-if` for Azure resources.</span>
+<span class="s0">6. </span><span class="s2">Require manual approval before deployment to production.</span>
+<span class="s0">7. </span><span class="s2">Deploy Bicep for the Function App, Storage, Cosmos DB, Key Vault, and monitoring.</span>
+<span class="s0">8. </span><span class="s2">Deploy Terraform for Kafka topics, service accounts, and ACLs.</span>
+<span class="s0">9. </span><span class="s2">Deploy application code after infrastructure succeeds; update app settings and wired secrets.</span>
+<span class="s0">10. </span><span class="s2">Store Kafka, Cosmos, and SendGrid secrets in GitHub Secrets and Azure Key Vault, never in code.</span>
+<span class="s0">11. </span><span class="s2">Restrict production deployment to the main branch.</span>
+<span class="s0">12. </span><span class="s2">Run a smoke test that publishes a test command and verifies the expected event path.</span>
+<span class="s0">13. </span><span class="s2">Add a manual replay workflow for a selected company and date range.</span>
+
+<span class="s0">## </span><span class="s2">Updated the implementation order</span>
+
+<span class="s0">1. </span><span class="s2">Create and build the Maven Azure Functions project.</span>
+<span class="s0">2. </span><span class="s2">Add Spring Boot application structure.</span>
+<span class="s0">3. </span><span class="s2">Configure the existing Confluent broker and create Kafka topics.</span>
+<span class="s0">4. </span><span class="s2">Publish and consume a test scrape command.</span>
+<span class="s0">5. </span><span class="s2">Implement the McKesson scraper consumer.</span>
+<span class="s0">6. </span><span class="s2">Add Blob Storage raw persistence.</span>
+<span class="s0">7. </span><span class="s2">Add normalization and Cosmos DB persistence.</span>
+<span class="s0">8. </span><span class="s2">Add multiple company configurations.</span>
+<span class="s0">9. </span><span class="s2">Add monthly metrics.</span>
+<span class="s0">10. </span><span class="s2">Add daily SendGrid summaries.</span>
+<span class="s0">11. </span><span class="s2">Create Bicep templates for Azure infrastructure </span><span class="s1">(</span><span class="s2">Stage 7</span><span class="s1">)</span><span class="s2">.</span>
+<span class="s0">12. </span><span class="s2">Create Terraform modules for Confluent resources </span><span class="s1">(</span><span class="s2">Stage 7</span><span class="s1">)</span><span class="s2">.</span>
+<span class="s0">13. </span><span class="s2">Build GitHub Actions CI/CD pipeline </span><span class="s1">(</span><span class="s2">Stage 8</span><span class="s1">)</span><span class="s2">.</span>
+
+<span class="s0">## </span><span class="s2">Single Function App deployment</span>
+
+<span class="s2">Use one Flex Consumption Function App containing five independently triggered functions</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">text</span>
+<span class="s4">job-scraper-function</span>
+<span class="s4">|- DailyScrapeCommandProducer       Timer trigger</span>
+<span class="s4">|- ScraperConsumer                  Kafka trigger</span>
+<span class="s4">|- NormalizerConsumer               Kafka trigger</span>
+<span class="s4">|- MetricsConsumer                  Kafka trigger</span>
+<span class="s4">`- SendGridEmailConsumer             Kafka trigger</span>
+<span class="s0">```</span>
+
+<span class="s2">The Function App is the deployment boundary. Kafka topics, consumer groups, partitions, retries, and dead-letter topics provide the event-driven behavior.</span>
+
+<span class="s2">This is a serverless, event-driven modular platform with microservice-style bounded components. It should not be described as independently deployable microservices unless the components are later split into separate Function Apps.</span>
+
+<span class="s0">## </span><span class="s2">Architecture guarantees</span>
+
+<span class="s0">### </span><span class="s2">Job deduplication</span>
+
+<span class="s2">Kafka processing must be treated as at-least-once delivery. Consumers must be idempotent.</span>
+
+<span class="s2">Use deterministic identifiers</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">text</span>
+<span class="s4">Current posting ID:</span>
+  <span class="s4">{companyId}:{externalJobId}</span>
+
+<span class="s4">Observation ID:</span>
+  <span class="s4">{companyId}:{scrapeDate}:{externalJobId}</span>
+
+<span class="s4">Scrape command ID:</span>
+  <span class="s4">{runId}:{companyId}</span>
+<span class="s0">```</span>
+
+<span class="s2">The job-postings Cosmos document uses the company ID and external job ID as its stable identity</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">json</span>
+<span class="s4">{</span>
+  <span class="s4">&quot;id&quot;: &quot;mckesson:99215825472&quot;,</span>
+  <span class="s4">&quot;companyId&quot;: &quot;mckesson&quot;,</span>
+  <span class="s4">&quot;externalJobId&quot;: &quot;99215825472&quot;</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s2">The persistence consumer uses upsert operations. Replayed events update the existing document rather than creating duplicates. Daily observation documents use a deterministic ID so the same posting is recorded only once per company and scrape date. Monthly metrics are upserted or recalculated from unique observations rather than blindly incremented for every Kafka delivery.</span>
+
+<span class="s2">Consumer processing order</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">text</span>
+<span class="s4">Receive Kafka event</span>
+  <span class="s4">-&gt; validate event</span>
+  <span class="s4">-&gt; perform deterministic persistence</span>
+  <span class="s4">-&gt; publish downstream event</span>
+  <span class="s4">-&gt; commit Kafka offset</span>
+<span class="s0">```</span>
+
+<span class="s2">Offsets must not be committed before successful persistence.</span>
+
+<span class="s0">### </span><span class="s2">Parallel scraping and failure isolation</span>
+
+<span class="s2">Publish one ScrapeCompanyCommand per company. Never publish one message containing the complete company list.</span>
+
+<span class="s0">```</span><span class="s3">text</span>
+<span class="s4">job.scrape.commands</span>
+
+<span class="s4">ScrapeCompany(USAA)</span>
+<span class="s4">ScrapeCompany(GM Financial)</span>
+<span class="s4">ScrapeCompany(BNSF)</span>
+<span class="s4">ScrapeCompany(Oracle)</span>
+<span class="s4">ScrapeCompany(Microsoft)</span>
+<span class="s4">ScrapeCompany(Amazon)</span>
+<span class="s4">ScrapeCompany(Google)</span>
+<span class="s4">ScrapeCompany(Lockheed Martin)</span>
+<span class="s4">ScrapeCompany(Forescout)</span>
+<span class="s4">ScrapeCompany(Indeed)</span>
+<span class="s0">```</span>
+
+<span class="s2">Use companyId as the Kafka message key. Kafka routes records with the same key to the same partition, preserving ordering for that key. Multiple partitions allow the scraper consumer group to process different companies concurrently.</span>
+
+<span class="s2">Use one-message processing for the scraper command topic initially. This ensures a failure for Oracle does not cause a batch containing successful USAA, GM Financial, or BNSF commands to be retried as one unit.</span>
+
+<span class="s2">Expected behavior</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">text</span>
+<span class="s4">USAA       -&gt; SUCCESS -&gt; commit offset</span>
+<span class="s4">GM         -&gt; SUCCESS -&gt; commit offset</span>
+<span class="s4">BNSF       -&gt; SUCCESS -&gt; commit offset</span>
+<span class="s4">Oracle     -&gt; FAILURE -&gt; retry Oracle only</span>
+<span class="s4">Microsoft  -&gt; SUCCESS -&gt; commit offset</span>
+<span class="s0">```</span>
+
+<span class="s2">Each scraper should have its own timeout, retry limit, backoff policy, rate limit, circuit breaker, failure status, and dead-letter handling.</span>
+
+<span class="s2">After the retry limit is exceeded</span><span class="s1">:</span>
+
+<span class="s2">`text</span>
+<span class="s2">ScrapeCompany</span><span class="s1">(</span><span class="s2">Oracle</span><span class="s1">)</span>
+  <span class="s2">-</span><span class="s1">&gt; </span><span class="s2">retry with backoff</span>
+  <span class="s2">-</span><span class="s1">&gt; </span><span class="s2">job.scrape.commands.DLT</span>
+  <span class="s2">-</span><span class="s1">&gt; </span><span class="s2">ScrapeCompanyFailed event</span>
+<span class="s2">`</span>
+
+<span class="s2">A failed company must not prevent other company commands from completing.</span>
+
+<span class="s0">### </span><span class="s2">Pluggable scraper implementations</span>
+
+<span class="s2">Use a common scraper contract and registry</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">java</span>
+<span class="s4">public interface CompanyScraper {</span>
+    <span class="s4">CompanyId companyId();</span>
+    <span class="s4">ScrapeResult scrape(ScrapeContext context);</span>
+<span class="s4">}</span>
+<span class="s0">```</span>
+
+<span class="s2">Each company implements the contract independently</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">text</span>
+<span class="s4">CompanyScraper</span>
+<span class="s4">|- UsaaScraper</span>
+<span class="s4">|- GmFinancialScraper</span>
+<span class="s4">|- BnsfScraper</span>
+<span class="s4">|- OracleScraper</span>
+<span class="s4">|- MicrosoftScraper</span>
+<span class="s4">|- AmazonScraper</span>
+<span class="s4">|- GoogleScraper</span>
+<span class="s4">|- LockheedMartinScraper</span>
+<span class="s4">|- ForescoutScraper</span>
+<span class="s4">`- IndeedScraper</span>
+<span class="s0">```</span>
+
+<span class="s2">The Kafka consumer selects a scraper through CompanyScraperRegistry. It must not contain company-specific if or switch statements.</span>
+
+<span class="s2">Adding a company should require</span><span class="s1">:</span>
+
+<span class="s0">```</span><span class="s3">text</span>
+<span class="s4">Add NewCompanyScraper</span>
+<span class="s4">Add parser tests</span>
+<span class="s4">Add saved response fixtures</span>
+<span class="s4">Add company configuration</span>
+<span class="s4">No changes to Kafka consumer</span>
+<span class="s4">No changes to persistence</span>
+<span class="s4">No changes to metrics</span>
+<span class="s0">```</span>
+
+<span class="s0">## </span><span class="s2">Code structure</span>
+
+<span class="s2">Use a modular hexagonal structure so the single Function App can later be split into multiple deployable services without rewriting business logic</span><span class="s1">:</span>
+
+<span class="s2">`text</span>
+<span class="s2">src/main/java/com/jobscraper/</span>
+<span class="s2">|- function/</span>
+<span class="s2">|   |- DailyScrapeCommandProducerFunction.java</span>
+<span class="s2">|   |- ScraperConsumerFunction.java</span>
+<span class="s2">|   |- NormalizerConsumerFunction.java</span>
+<span class="s2">|   |- MetricsConsumerFunction.java</span>
+<span class="s2">|   `- SendGridEmailConsumerFunction.java</span>
+<span class="s2">|- application/</span>
+<span class="s2">|   |- command/</span>
+<span class="s2">|   |- normalization/</span>
+<span class="s2">|   |- metrics/</span>
+<span class="s2">|   `- notification/</span>
+<span class="s2">|- domain/</span>
+<span class="s2">|   |- company/</span>
+<span class="s2">|   |- job/</span>
+<span class="s2">|   |- events/</span>
+<span class="s2">|   `- metrics/</span>
+<span class="s2">|- scraper/</span>
+<span class="s2">|   |- api/</span>
+<span class="s2">|   |- registry/</span>
+<span class="s2">|   `- companies/</span>
+<span class="s2">|       |- usaa/</span>
+<span class="s2">|       |- gmfinancial/</span>
+<span class="s2">|       |- bnsf/</span>
+<span class="s2">|       |- oracle/</span>
+<span class="s2">|       |- microsoft/</span>
+<span class="s2">|       |- amazon/</span>
+<span class="s2">|       |- google/</span>
+<span class="s2">|       |- lockheedmartin/</span>
+<span class="s2">|       |- forescout/</span>
+<span class="s2">|       `- indeed/</span>
+<span class="s2">|- infrastructure/</span>
+<span class="s2">|   |- kafka/</span>
+<span class="s2">|   |- blob/</span>
+<span class="s2">|   |- cosmos/</span>
+<span class="s2">|   |- email/</span>
+<span class="s2">|   `- observability/</span>
+<span class="s2">`- configuration/</span>
+<span class="s2">`</span>
+
+<span class="s2">Tests should mirror the company adapters and application handlers</span><span class="s1">:</span>
+
+<span class="s2">`text</span>
+<span class="s2">src/test/java/com/jobscraper/</span>
+<span class="s2">|- scraper/companies/</span>
+<span class="s2">|- application/</span>
+<span class="s2">|- infrastructure/</span>
+<span class="s2">`- contract/</span>
+<span class="s2">`</span>
+
+<span class="s2">Each scraper should have saved HTML or JSON fixtures so parser tests are deterministic and resilient to website changes.</span>
+
+<span class="s0">## </span><span class="s2">Portfolio architecture statement</span>
+
+<span class="s2">This project can accurately be described as</span><span class="s1">:</span>
+
+<span class="s0">&gt; </span><span class="s2">A serverless, event-driven job-ingestion platform where each company is a pluggable scraper adapter. Daily commands are distributed through Kafka, company scrapes execute independently across partitions, failures are isolated through retry and dead-letter flows, and normalized events are processed idempotently into Cosmos DB for historical analytics.</span>
+
+<span class="s2">The single Function App optimizes deployment simplicity while retaining</span><span class="s1">:</span>
+
+<span class="s0">- </span><span class="s2">Serverless execution</span>
+<span class="s0">- </span><span class="s2">Event-driven processing</span>
+<span class="s0">- </span><span class="s2">Asynchronous Kafka communication</span>
+<span class="s0">- </span><span class="s2">Partition-based parallelism</span>
+<span class="s0">- </span><span class="s2">Fault isolation</span>
+<span class="s0">- </span><span class="s2">Retry and dead-letter handling</span>
+<span class="s0">- </span><span class="s2">Idempotent persistence</span>
+<span class="s0">- </span><span class="s2">Pluggable scraper adapters</span>
+<span class="s0">- </span><span class="s2">Historical analytics</span>
+<span class="s0">- </span><span class="s2">Observability</span>
+
+<span class="s0">## </span><span class="s2">Official references</span>
+
+<span class="s0">- </span><span class="s1">[</span><span class="s2">Azure Java Functions</span><span class="s1">](</span><span class="s5">https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-java</span><span class="s1">)</span>
+<span class="s0">- </span><span class="s1">[</span><span class="s2">Azure Timer Trigger</span><span class="s1">](</span><span class="s5">https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-timer</span><span class="s1">)</span>
+<span class="s0">- </span><span class="s1">[</span><span class="s2">Azure Storage libraries for Java</span><span class="s1">](</span><span class="s5">https://learn.microsoft.com/en-us/java/api/overview/azure/storage?view=azure-java-stable</span><span class="s1">)</span>
+<span class="s0">- </span><span class="s1">[</span><span class="s2">Azure Cosmos DB Java SDK v4</span><span class="s1">](</span><span class="s5">https://learn.microsoft.com/en-us/azure/cosmos-db/sdk-java-v4</span><span class="s1">)</span>
+<span class="s0">- </span><span class="s1">[</span><span class="s2">Azure Functions GitHub Actions</span><span class="s1">](</span><span class="s5">https://learn.microsoft.com/en-us/azure/azure-functions/functions-how-to-github-actions</span><span class="s1">)</span>
+<span class="s0">- </span><span class="s1">[</span><span class="s2">Twilio SendGrid Java quickstart</span><span class="s1">](</span><span class="s5">https://www.twilio.com/docs/sendgrid/for-developers/sending-email/email-quickstart-for-java</span><span class="s1">)</span>
+
+<span class="s2">Design reference date</span><span class="s1">: </span><span class="s2">August 16, 2026.</span>
+</pre>
+</body>
+</html>
