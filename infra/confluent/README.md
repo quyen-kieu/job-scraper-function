@@ -24,12 +24,17 @@ Copy `terraform.tfvars.example` to `terraform.tfvars` (gitignored) for the non-s
 
 ## Remote state
 
+Uses Azure AD auth (`use_azuread_auth=true`), not a storage account access key — the CI/CD
+identity is granted `Storage Blob Data Contributor` on the state storage account (RBAC), never an
+account key, matching this project's preference for identity-based auth over shared secrets.
+
 ```powershell
 terraform init `
   -backend-config="resource_group_name=<rg>" `
   -backend-config="storage_account_name=<tfstate-storage-account>" `
   -backend-config="container_name=confluent" `
-  -backend-config="key=<env>.tfstate"
+  -backend-config="key=<env>.tfstate" `
+  -backend-config="use_azuread_auth=true"
 ```
 
 In CI (`.github/workflows/deploy.yml`), these same four values come from the

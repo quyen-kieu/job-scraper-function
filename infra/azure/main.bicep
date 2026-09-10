@@ -25,6 +25,9 @@ param cosmosMetricsContainer string = 'monthly-metrics'
 @description('Azure AD tenant ID for Key Vault RBAC.')
 param tenantId string = subscription().tenantId
 
+@description('Object ID of the GitHub Actions OIDC service principal (deploy.yml\'s azure/login identity). Granted Key Vault Secrets Officer so deploy-app can write real secret values post-deployment. Not a secret itself (an object ID has no standalone access), so it is a plain, non-@secure() parameter sourced from a GitHub Variable.')
+param cicdServicePrincipalObjectId string = ''
+
 @description('Kafka bootstrap servers (Confluent Cloud), e.g. pkc-xxxxx.region.provider.confluent.cloud:9092.')
 param kafkaBootstrapServers string
 
@@ -214,13 +217,27 @@ resource functionAppKeyVaultRoleAssignment 'Microsoft.Authorization/roleAssignme
   }
 }
 
+// Built-in "Key Vault Secrets Officer" role definition id — grants read/write/delete on secrets
+// (not just read, unlike Secrets User above), needed by deploy.yml's deploy-app job to run
+// `az keyvault secret set` for kafka-username/kafka-password/resend-api-key post-deployment.
+// Only assigned when the parameter is actually supplied (skip-if-empty via a conditional
+// resource), so this stays a no-op for any deployment that doesn't pass a CI/CD identity.
+var keyVaultSecretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
+
+resource cicdKeyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(cicdServicePrincipalObjectId)) {
+  name: guid(existingVault.id, cicdServicePrincipalObjectId, keyVaultSecretsOfficerRoleId)
+  scope: existingVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsOfficerRoleId)
+    principalId: cicdServicePrincipalObjectId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 output functionAppName string = functionApp.outputs.name
 output functionAppDefaultHostName string = functionApp.outputs.defaultHostName
 output keyVaultName string = keyVault.outputs.vaultName
 output cosmosEndpoint string = cosmos.outputs.endpoint
-
-
-
 
 
 
