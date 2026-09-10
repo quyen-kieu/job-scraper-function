@@ -147,8 +147,8 @@ module "service_accounts" {
 
   service_accounts          = local.service_accounts
   environment_id            = data.confluent_environment.this.id
-  kafka_cluster_id           = data.confluent_kafka_cluster.shared.id
-  kafka_cluster_api_version  = data.confluent_kafka_cluster.shared.api_version
+  kafka_cluster_id          = data.confluent_kafka_cluster.shared.id
+  kafka_cluster_api_version = data.confluent_kafka_cluster.shared.api_version
 }
 
 module "acls" {

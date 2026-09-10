@@ -2,7 +2,7 @@ variable "service_accounts" {
   description = "Map of logical role name (scraper, normalizer, persistence, metrics, email) -> display name/description."
   type = map(object({
     display_name = string
-    description   = string
+    description  = string
   }))
 }
 
