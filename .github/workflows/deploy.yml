@@ -213,10 +213,6 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7.5"
-      - uses: actions/download-artifact@v4
-        with:
-          name: tfplan-${{ needs.setup.outputs.bicep_env }}
-          path: infra/confluent
       - name: terraform init (real backend)
         run: |
           terraform init \
