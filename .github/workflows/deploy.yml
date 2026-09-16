@@ -221,7 +221,28 @@ jobs:
             -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
             -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate" \
             -backend-config="use_azuread_auth=true"
-      - name: terraform plan
+      - name: Import existing shared Kafka topics if already present
+        run: |
+          set +e
+          for topic in \
+            job.scrape.commands \
+            job.scrape.commands.DLT \
+            job.scrape.completed \
+            job.scrape.completed.DLT \
+            job.postings.normalized \
+            job.postings.normalized.DLT \
+            job.metrics.monthly \
+            job.metrics.monthly.DLT \
+            notifications.daily \
+            notifications.daily.DLT; do
+            if terraform state list | grep -F "module.topics.confluent_kafka_topic.this[\"${topic}\"]" >/dev/null 2>&1; then
+              echo "Topic ${topic} already imported into state; skipping import."
+              continue
+            fi
+            echo "Importing existing topic: ${topic}"
+            terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" || true
+          done
+          set -e      - name: terraform plan
         run: terraform plan -input=false -out=tfplan
         env:
           TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
@@ -296,7 +317,50 @@ jobs:
             -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
             -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate" \
             -backend-config="use_azuread_auth=true"
-      - name: terraform apply (using the plan-confluent job's saved plan)
+      - name: Import existing shared Kafka topics if already present
+        run: |
+          set +e
+          for topic in \
+            job.scrape.commands \
+            job.scrape.commands.DLT \
+            job.scrape.completed \
+            job.scrape.completed.DLT \
+            job.postings.normalized \
+            job.postings.normalized.DLT \
+            job.metrics.monthly \
+            job.metrics.monthly.DLT \
+            notifications.daily \
+            notifications.daily.DLT; do
+            if terraform state list | grep -F "module.topics.confluent_kafka_topic.this[\"${topic}\"]" >/dev/null 2>&1; then
+              echo "Topic ${topic} already imported into state; skipping import."
+              continue
+            fi
+            echo "Importing existing topic: ${topic}"
+            terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" || true
+          done
+          set -e
+      - name: Import existing shared Kafka topics if already present
+        run: |
+          set +e
+          for topic in \
+            job.scrape.commands \
+            job.scrape.commands.DLT \
+            job.scrape.completed \
+            job.scrape.completed.DLT \
+            job.postings.normalized \
+            job.postings.normalized.DLT \
+            job.metrics.monthly \
+            job.metrics.monthly.DLT \
+            notifications.daily \
+            notifications.daily.DLT; do
+            if terraform state list | grep -F "module.topics.confluent_kafka_topic.this[\"${topic}\"]" >/dev/null 2>&1; then
+              echo "Topic ${topic} already imported into state; skipping import."
+              continue
+            fi
+            echo "Importing existing topic: ${topic}"
+            terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" || true
+          done
+          set -e      - name: terraform apply (using the plan-confluent job's saved plan)
         run: terraform apply -input=false -auto-approve tfplan
 
   # README item 9 + closes the Stage 7 forward-reference for populating Key Vault secrets.
