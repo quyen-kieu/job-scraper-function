@@ -207,6 +207,22 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7.5"
+
+      # Fails fast with an actionable message instead of Terraform's opaque
+      # "exactly one of id or display_name must be specified but they're both empty" error, which
+      # is what happens when these repo Secrets/Variables (README §2b) haven't been set yet.
+      - name: Verify required Confluent configuration is set
+        run: |
+          missing=()
+          [ -z "${{ vars.CONFLUENT_ENVIRONMENT_ID }}" ] && missing+=("CONFLUENT_ENVIRONMENT_ID (repo Variable)")
+          [ -z "${{ vars.CONFLUENT_CLUSTER_ID }}" ] && missing+=("CONFLUENT_CLUSTER_ID (repo Variable)")
+          [ -z "${{ secrets.CONFLUENT_CLOUD_API_KEY }}" ] && missing+=("CONFLUENT_CLOUD_API_KEY (repo Secret)")
+          [ -z "${{ secrets.CONFLUENT_CLOUD_API_SECRET }}" ] && missing+=("CONFLUENT_CLOUD_API_SECRET (repo Secret)")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required Confluent configuration: ${missing[*]}. See .github/workflows/README.md section 2b for how to set them."
+            exit 1
+          fi
+
       - name: terraform init (real backend)
         run: |
           terraform init \

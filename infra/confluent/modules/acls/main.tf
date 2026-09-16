@@ -7,7 +7,7 @@ terraform {
 }
 
 resource "confluent_kafka_acl" "this" {
-  for_each = { for idx, acl in var.acls : "${acl.principal_id}-${acl.resource_type}-${acl.resource_name}-${acl.operation}" => acl }
+  for_each = { for idx, acl in var.acls : idx => acl }
 
   kafka_cluster {
     id = var.kafka_cluster_id
@@ -26,4 +26,3 @@ resource "confluent_kafka_acl" "this" {
     secret = var.kafka_api_secret
   }
 }
-

@@ -26,6 +26,28 @@ Confluent-related still needs real values from the Confluent Cloud console — s
 | `AZURE_TENANT_ID` | Secret | This subscription's tenant. |
 | `AZURE_SUBSCRIPTION_ID` | Secret | The `Pay-As-You-Go` subscription used for local `az` login. |
 | `AZURE_CICD_SP_OBJECT_ID` | Variable | The above app's service principal object ID — granted `Contributor` on the `java-functions-group` resource group (for Bicep) and `Storage Blob Data Contributor` on the Terraform state storage account. Also passed into `main.bicep` so it's granted `Key Vault Secrets Officer` on the deployed vault (needed for `deploy-app`'s `az keyvault secret set` calls). |
+
+**⚠️ Known gap:** `Contributor` deliberately excludes `Microsoft.Authorization/roleAssignments/write`
+(Azure built-in roles never let a principal grant roles unless they're also a role-assignment
+administrator). `main.bicep` creates two `Microsoft.Authorization/roleAssignments` resources
+(the Function App's Key Vault Secrets User grant, and — when `cicdServicePrincipalObjectId` is
+supplied — this same SP's own Key Vault Secrets Officer grant), so `plan-azure`'s `az deployment
+group what-if` fails with `AuthorizationFailed` at the vault scope until the SP is *also* granted
+a role-assignment-capable role. Fix (run once, by someone with Owner/User Access Administrator on
+the subscription — replace `<sp-object-id>` with the `AZURE_CICD_SP_OBJECT_ID` value):
+```powershell
+az role assignment create `
+  --assignee-object-id <sp-object-id> `
+  --assignee-principal-type ServicePrincipal `
+  --role "Role Based Access Control Administrator" `
+  --scope /subscriptions/<subscription-id>/resourceGroups/java-functions-group
+```
+`Role Based Access Control Administrator` (not `User Access Administrator`) is the narrower
+built-in role that grants `roleAssignments/write` while still excluding privilege-escalation-prone
+actions like Owner-role assignment — appropriate for a CI/CD identity. Scoping it to the resource
+group (rather than the whole vault, which doesn't exist as an ARM scope until Bicep itself creates
+it) is sufficient since `roleAssignments/write` is inherited down to child resources.
+
 | `TF_BACKEND_RESOURCE_GROUP` | Variable | `java-functions-group` (created if it didn't already exist). |
 | `TF_BACKEND_STORAGE_ACCOUNT` | Variable | A newly created dedicated storage account for Terraform remote state (not the same account Bicep provisions for blob storage). |
 | `TF_BACKEND_CONTAINER` | Variable | `confluent`. |
