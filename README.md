@@ -9,6 +9,10 @@
 
 The design uses Java Spring Boot, Azure Functions, Azure Blob Storage, Azure Cosmos DB for NoSQL, Resend, GitHub Actions, and an existing Confluent Kafka broker. It avoids browser automation and residential proxies.
 
+The 2 pillars driving the architecture are:
+1. This project is meant for learning purposes.
+2. Keep costs to zero or minimal.
+
 ## Architecture overview
 
 ```mermaid
