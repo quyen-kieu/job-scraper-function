@@ -137,8 +137,8 @@ module "topics" {
   kafka_cluster_id    = data.confluent_kafka_cluster.shared.id
   kafka_rest_endpoint = data.confluent_kafka_cluster.shared.rest_endpoint
   environment_id      = data.confluent_environment.this.id
-  kafka_api_key       = var.confluent_cloud_api_key
-  kafka_api_secret    = var.confluent_cloud_api_secret
+  kafka_api_key       = var.kafka_api_key
+  kafka_api_secret    = var.kafka_api_secret
   topics              = local.all_topics
 }
 
@@ -156,8 +156,7 @@ module "acls" {
 
   kafka_cluster_id    = data.confluent_kafka_cluster.shared.id
   kafka_rest_endpoint = data.confluent_kafka_cluster.shared.rest_endpoint
-  kafka_api_key       = var.confluent_cloud_api_key
-  kafka_api_secret    = var.confluent_cloud_api_secret
+  kafka_api_key       = var.kafka_api_key
+  kafka_api_secret    = var.kafka_api_secret
   acls                = local.acl_entries
 }
-

@@ -179,6 +179,10 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Ensure Azure resource providers are registered
+        run: |
+          az provider register --namespace Microsoft.DocumentDB --wait
+          az provider show --namespace Microsoft.DocumentDB --query "registrationState" -o tsv
       - name: az deployment group what-if
         run: |
           az deployment group what-if \
@@ -226,6 +230,8 @@ jobs:
         env:
           TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
           TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          TF_VAR_kafka_api_key: ${{ secrets.KAFKA_CLIENT_API_KEY }}
+          TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
           TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
           TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
       - uses: actions/upload-artifact@v4
@@ -271,6 +277,12 @@ jobs:
       ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       ARM_USE_OIDC: true
+      TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+      TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+      TF_VAR_kafka_api_key: ${{ secrets.KAFKA_CLIENT_API_KEY }}
+      TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
+      TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
+      TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -368,4 +380,3 @@ jobs:
           FUNCTION_APP_NAME: ${{ needs.setup.outputs.function_app_name }}
           APP_INSIGHTS_APP_ID: ${{ steps.ai.outputs.app_id }}
         run: bash scripts/smoke_test.sh
-

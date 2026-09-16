@@ -27,6 +27,13 @@ Confluent-related still needs real values from the Confluent Cloud console — s
 | `AZURE_SUBSCRIPTION_ID` | Secret | The `Pay-As-You-Go` subscription used for local `az` login. |
 | `AZURE_CICD_SP_OBJECT_ID` | Variable | The above app's service principal object ID — granted `Contributor` on the `java-functions-group` resource group (for Bicep) and `Storage Blob Data Contributor` on the Terraform state storage account. Also passed into `main.bicep` so it's granted `Key Vault Secrets Officer` on the deployed vault (needed for `deploy-app`'s `az keyvault secret set` calls). |
 
+**Before running `plan-azure` or `apply-azure`, ensure the subscription has the required resource providers registered**:
+```powershell
+az provider register --namespace Microsoft.DocumentDB --wait
+az provider show --namespace Microsoft.DocumentDB --query "registrationState" -o tsv
+```
+The subscription can deploy Cosmos DB resources only after `Microsoft.DocumentDB` shows `Registered`. This is required for the `cosmos.bicep` module and is not a template bug.
+
 **⚠️ Known gap:** `Contributor` deliberately excludes `Microsoft.Authorization/roleAssignments/write`
 (Azure built-in roles never let a principal grant roles unless they're also a role-assignment
 administrator). `main.bicep` creates two `Microsoft.Authorization/roleAssignments` resources
@@ -60,13 +67,42 @@ it) is sufficient since `roleAssignments/write` is inherited down to child resou
 |---|---|---|
 | `CONFLUENT_CLOUD_API_KEY` | Secret | Confluent Cloud console → your organization → API keys. Needs **org-admin** scope (topic/ACL/service-account/API-key management) — distinct from the cluster-scoped `KAFKA_CLIENT_API_KEY` already set above, which only has data-plane produce/consume rights. |
 | `CONFLUENT_CLOUD_API_SECRET` | Secret | Paired with the key above. |
+| `KAFKA_CLIENT_API_KEY` | Secret | Confluent Cloud console → your cluster → API keys. **This is the cluster-scoped credential Terraform must use for `confluent_kafka_topic` and `confluent_kafka_acl` management.** |
+| `KAFKA_CLIENT_API_SECRET` | Secret | Paired with the cluster-scoped key above. |
 | `CONFLUENT_ENVIRONMENT_ID` | Variable | Confluent Cloud console → Environments (format `env-xxxxxx`). |
 | `CONFLUENT_CLUSTER_ID` | Variable | Confluent Cloud console → your cluster's settings (format `lkc-xxxxxx`). The existing `shared-kafka-dev-us-central1` cluster referenced throughout the README. |
 
-Once you have these four values, set them with:
+Once you have these six values, set them with:
 ```powershell
 gh secret set CONFLUENT_CLOUD_API_KEY --repo quyen-kieu/job-scraper-function
 gh secret set CONFLUENT_CLOUD_API_SECRET --repo quyen-kieu/job-scraper-function
+gh secret set KAFKA_CLIENT_API_KEY --repo quyen-kieu/job-scraper-function
+gh secret set KAFKA_CLIENT_API_SECRET --repo quyen-kieu/job-scraper-function
+gh variable set CONFLUENT_ENVIRONMENT_ID --repo quyen-kieu/job-scraper-function --body "env-xxxxxx"
+gh variable set CONFLUENT_CLUSTER_ID --repo quyen-kieu/job-scraper-function --body "lkc-xxxxxx"
+```
+
+````
+This is the description of what the code block changes:
+<changeDescription>
+Clarify that Terraform topic/ACL creation requires the cluster-scoped Kafka API key/secret, while the org-level Confluent Cloud key is only used for Confluent provider authentication and environment lookup.
+</changeDescription>
+
+This is the code block that represents the suggested code change:
+````markdown
+| `CONFLUENT_CLOUD_API_KEY` | Secret | Confluent Cloud console → your organization → API keys. Needs **org-admin** scope (topic/ACL/service-account/API-key management) — distinct from the cluster-scoped `KAFKA_CLIENT_API_KEY` already set above, which only has data-plane produce/consume rights. |
+| `CONFLUENT_CLOUD_API_SECRET` | Secret | Paired with the key above. |
+| `KAFKA_CLIENT_API_KEY` | Secret | Confluent Cloud console → your cluster → API keys. **This is the cluster-scoped credential Terraform must use for `confluent_kafka_topic` and `confluent_kafka_acl` management.** |
+| `KAFKA_CLIENT_API_SECRET` | Secret | Paired with the cluster-scoped key above. |
+| `CONFLUENT_ENVIRONMENT_ID` | Variable | Confluent Cloud console → Environments (format `env-xxxxxx`). |
+| `CONFLUENT_CLUSTER_ID` | Variable | Confluent Cloud console → your cluster's settings (format `lkc-xxxxxx`). The existing `shared-kafka-dev-us-central1` cluster referenced throughout the README. |
+
+Once you have these six values, set them with:
+```powershell
+gh secret set CONFLUENT_CLOUD_API_KEY --repo quyen-kieu/job-scraper-function
+gh secret set CONFLUENT_CLOUD_API_SECRET --repo quyen-kieu/job-scraper-function
+gh secret set KAFKA_CLIENT_API_KEY --repo quyen-kieu/job-scraper-function
+gh secret set KAFKA_CLIENT_API_SECRET --repo quyen-kieu/job-scraper-function
 gh variable set CONFLUENT_ENVIRONMENT_ID --repo quyen-kieu/job-scraper-function --body "env-xxxxxx"
 gh variable set CONFLUENT_CLUSTER_ID --repo quyen-kieu/job-scraper-function --body "lkc-xxxxxx"
 ```
@@ -87,4 +123,3 @@ Open a pull request touching `infra/**` or `src/**` — you should see `validate
 `package`, `plan-azure`, and `plan-confluent` run automatically (read-only, no approval needed).
 `plan-azure` should already succeed today (Azure secrets are set); `plan-confluent` will keep
 failing at `terraform init`/`plan` until §2b's four Confluent values are set.
-
