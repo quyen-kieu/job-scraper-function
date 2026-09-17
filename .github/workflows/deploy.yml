@@ -184,6 +184,9 @@ jobs:
         run: |
           az provider register --namespace Microsoft.DocumentDB --wait
           az provider show --namespace Microsoft.DocumentDB --query "registrationState" -o tsv
+      - name: Ensure Azure resource group exists
+        run: |
+          az group create --name java-functions-group --location centralus --output none
       - name: az deployment group what-if
         run: |
           az deployment group what-if \
@@ -211,9 +214,49 @@ jobs:
       ARM_USE_OIDC: true
     steps:
       - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7.5"
+      - name: Ensure Terraform backend storage exists
+        env:
+          TF_BACKEND_RESOURCE_GROUP: ${{ vars.TF_BACKEND_RESOURCE_GROUP }}
+          TF_BACKEND_STORAGE_ACCOUNT: ${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}
+          TF_BACKEND_CONTAINER: ${{ vars.TF_BACKEND_CONTAINER }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TF_BACKEND_RESOURCE_GROUP}" ] || [ -z "${TF_BACKEND_STORAGE_ACCOUNT}" ] || [ -z "${TF_BACKEND_CONTAINER}" ]; then
+            echo "Missing required Terraform backend variables: TF_BACKEND_RESOURCE_GROUP, TF_BACKEND_STORAGE_ACCOUNT, or TF_BACKEND_CONTAINER."
+            exit 1
+          fi
+
+          az group create --name "${TF_BACKEND_RESOURCE_GROUP}" --location centralus --output none
+
+          if ! az storage account show --name "${TF_BACKEND_STORAGE_ACCOUNT}" --resource-group "${TF_BACKEND_RESOURCE_GROUP}" >/dev/null 2>&1; then
+            echo "Creating backend storage account ${TF_BACKEND_STORAGE_ACCOUNT}..."
+            az storage account create \
+              --name "${TF_BACKEND_STORAGE_ACCOUNT}" \
+              --resource-group "${TF_BACKEND_RESOURCE_GROUP}" \
+              --location centralus \
+              --sku Standard_LRS \
+              --kind StorageV2 \
+              --allow-blob-public-access false \
+              --https-only true \
+              --output none
+          fi
+
+          if ! az storage container exists --account-name "${TF_BACKEND_STORAGE_ACCOUNT}" --auth-mode login --name "${TF_BACKEND_CONTAINER}" >/dev/null 2>&1; then
+            echo "Creating backend container ${TF_BACKEND_CONTAINER}..."
+            az storage container create \
+              --account-name "${TF_BACKEND_STORAGE_ACCOUNT}" \
+              --auth-mode login \
+              --name "${TF_BACKEND_CONTAINER}" \
+              --output none
+          fi
       - name: terraform init (real backend)
         run: |
           terraform init \
