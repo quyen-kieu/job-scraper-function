@@ -3,7 +3,7 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "environmentName": { "value": "dev" },
-    "location": { "value": "westus" },
+    "location": { "value": "centralus" },
     "baseName": { "value": "job-scraper-function" },
     "storageContainerName": { "value": "job-scraper-raw" },
     "cosmosDatabaseName": { "value": "job-scraper" },
@@ -18,4 +18,3 @@
     "jobScraperDailyCron": { "value": "0 0 3 * * *" }
   }
 }
-

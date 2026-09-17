@@ -30,6 +30,8 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   }
 }
 
+var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccountExisting.name};AccountKey=${listKeys(storageAccountExisting.id, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+
 resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName
   location: location
@@ -50,9 +52,22 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       ])
     }
     functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'BlobContainer'
+          value: storageConnectionString
+          authentication: {
+            type: 'StorageAccountConnectionString'
+            storageAccountConnectionStringName: 'AzureWebJobsStorage'
+          }
+        }
+      }
       runtime: {
         name: 'java'
         version: '21'
+      }
+      scaleAndConcurrency: {
+        instanceMemoryMB: 512
       }
     }
   }
@@ -61,4 +76,3 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 output principalId string = functionApp.identity.principalId
 output name string = functionApp.name
 output defaultHostName string = functionApp.properties.defaultHostName
-

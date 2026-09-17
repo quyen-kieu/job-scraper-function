@@ -2,7 +2,7 @@
 param environmentName string
 
 @description('Azure region for all resources.')
-param location string = 'westus'
+param location string = 'centralus'
 
 @description('Base name used to derive resource names (Function App, plan, storage, Cosmos, Key Vault, monitoring).')
 param baseName string = 'job-scraper-function'
@@ -58,14 +58,14 @@ param resendSubjectPrefix string = 'Job Scraper Daily Summary'
 @description('Cron expression for the daily scrape trigger.')
 param jobScraperDailyCron string = '0 0 3 * * *'
 
-var suffix = '-${environmentName}'
-var storageAccountName = replace(toLower('${baseName}st${environmentName}'), '-', '')
-var cosmosAccountName = toLower('${baseName}-cosmos${suffix}')
-var keyVaultName = toLower('${baseName}-kv${suffix}')
-var functionAppName = '${baseName}${suffix}'
-var planName = '${baseName}-plan${suffix}'
-var logAnalyticsWorkspaceName = '${baseName}-logs${suffix}'
-var appInsightsName = '${baseName}-ai${suffix}'
+var regionCode = location == 'centralus' ? 'cus' : take(replace(toLower(location), ' ', ''), 3)
+var storageAccountName = toLower('${take(replace(baseName, '-', ''), 10)}st${environmentName}${regionCode}')
+var cosmosAccountName = toLower('${take(replace(baseName, '-', ''), 14)}-cosmos-${environmentName}-${regionCode}')
+var keyVaultName = toLower('${take(replace(baseName, '-', ''), 12)}kv${environmentName}${regionCode}')
+var functionAppName = toLower('${take(replace(baseName, '-', ''), 10)}-${environmentName}-${regionCode}')
+var planName = toLower('${take(replace(baseName, '-', ''), 10)}-plan-${environmentName}-${regionCode}')
+var logAnalyticsWorkspaceName = toLower('${take(replace(baseName, '-', ''), 10)}-logs-${environmentName}-${regionCode}')
+var appInsightsName = toLower('${take(replace(baseName, '-', ''), 10)}-ai-${environmentName}-${regionCode}')
 
 module storage 'modules/storage.bicep' = {
   name: 'storageDeploy'
@@ -176,6 +176,7 @@ var appSettings = [
   { name: 'RESEND_FROM_NAME', value: resendFromName }
   { name: 'RESEND_TO_EMAIL', value: resendToEmail }
   { name: 'RESEND_SUBJECT_PREFIX', value: resendSubjectPrefix }
+  { name: 'AzureWebJobsStorage', value: storageConnectionStringSecretUri }
 ]
 
 module functionApp 'modules/function-app.bicep' = {
@@ -238,7 +239,3 @@ output functionAppName string = functionApp.outputs.name
 output functionAppDefaultHostName string = functionApp.outputs.defaultHostName
 output keyVaultName string = keyVault.outputs.vaultName
 output cosmosEndpoint string = cosmos.outputs.endpoint
-
-
-
-
