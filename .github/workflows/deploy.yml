@@ -76,7 +76,8 @@ jobs:
             GH_ENV="dev"
           fi
 
-          FUNCTION_APP_NAME="job-scraper-function-${BICEP_ENV}"
+          REGION_CODE="cus"
+          FUNCTION_APP_NAME="jobscraper-${BICEP_ENV}-${REGION_CODE}"
 
           # README item 11: production only ever applies when running from main, regardless of
           # trigger type (push or manual workflow_dispatch). dev may apply from any branch/run,
@@ -242,7 +243,8 @@ jobs:
             echo "Importing existing topic: ${topic}"
             terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" || true
           done
-          set -e      - name: terraform plan
+          set -e
+      - name: terraform plan
         run: terraform plan -input=false -out=tfplan
         env:
           TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
@@ -339,28 +341,7 @@ jobs:
             terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" || true
           done
           set -e
-      - name: Import existing shared Kafka topics if already present
-        run: |
-          set +e
-          for topic in \
-            job.scrape.commands \
-            job.scrape.commands.DLT \
-            job.scrape.completed \
-            job.scrape.completed.DLT \
-            job.postings.normalized \
-            job.postings.normalized.DLT \
-            job.metrics.monthly \
-            job.metrics.monthly.DLT \
-            notifications.daily \
-            notifications.daily.DLT; do
-            if terraform state list | grep -F "module.topics.confluent_kafka_topic.this[\"${topic}\"]" >/dev/null 2>&1; then
-              echo "Topic ${topic} already imported into state; skipping import."
-              continue
-            fi
-            echo "Importing existing topic: ${topic}"
-            terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" || true
-          done
-          set -e      - name: terraform apply (using the plan-confluent job's saved plan)
+      - name: terraform apply (using the plan-confluent job's saved plan)
         run: terraform apply -input=false -auto-approve tfplan
 
   # README item 9 + closes the Stage 7 forward-reference for populating Key Vault secrets.
@@ -431,7 +412,7 @@ jobs:
         run: |
           APP_ID=$(az monitor app-insights component show \
             --resource-group java-functions-group \
-            --app "job-scraper-function-ai-${{ needs.setup.outputs.bicep_env }}" \
+            --app "jobscraper-ai-${{ needs.setup.outputs.bicep_env }}-cus" \
             --query "appId" -o tsv)
           echo "app_id=${APP_ID}" >> "$GITHUB_OUTPUT"
       - name: Run smoke test
