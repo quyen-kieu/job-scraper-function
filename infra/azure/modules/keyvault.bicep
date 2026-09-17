@@ -11,6 +11,15 @@ param tenantId string
 @secure()
 param secrets object
 
+var secretNames = [
+  'AzureWebJobsStorage'
+  'kafka-username'
+  'kafka-password'
+  'azure-storage-connection-string'
+  'azure-cosmos-key'
+  'resend-api-key'
+]
+
 // NOTE: this module intentionally does NOT accept the Function App's managed identity principal
 // id as a parameter. Doing so would create a circular module dependency, because the Function
 // App module needs this vault's URI to build its Key Vault reference app settings. The
@@ -31,16 +40,14 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-resource secretResources 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = [for key in items(secrets): {
+resource secretResources 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = [for secretName in secretNames: {
   parent: keyVault
-  name: key.key
+  name: secretName
   properties: {
-    value: key.value
+    value: secrets[secretName]
   }
 }]
 
 output vaultUri string = keyVault.properties.vaultUri
 output vaultName string = keyVault.name
 output vaultId string = keyVault.id
-
-
