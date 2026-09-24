@@ -266,6 +266,13 @@ jobs:
             -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate" \
             -backend-config="use_azuread_auth=true"
       - name: Import existing shared Kafka topics if already present
+        env:
+          TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          TF_VAR_kafka_api_key: ${{ secrets.KAFKA_CLIENT_API_KEY }}
+          TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
+          TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
+          TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
         run: |
           set +e
           for topic in \
@@ -363,6 +370,13 @@ jobs:
             -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate" \
             -backend-config="use_azuread_auth=true"
       - name: Import existing shared Kafka topics if already present
+        env:
+          TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          TF_VAR_kafka_api_key: ${{ secrets.KAFKA_CLIENT_API_KEY }}
+          TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
+          TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
+          TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
         run: |
           set +e
           for topic in \
@@ -382,6 +396,66 @@ jobs:
             fi
             echo "Importing existing topic: ${topic}"
             terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" || true
+          done
+          set -e
+      - name: Import existing shared Confluent service accounts and API keys if already present
+        env:
+          CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+        run: |
+          set +e
+
+          # Terraform keys (module.service_accounts local key) -> Confluent display_name, must
+          # match infra/confluent/main.tf's local.service_accounts exactly.
+          declare -A SA_DISPLAY_NAMES=(
+            [scraper]="sa-job-scraper-scraper"
+            [normalizer]="sa-job-scraper-normalizer"
+            [persistence]="sa-job-scraper-persistence"
+            [metrics]="sa-job-scraper-metrics"
+            [email]="sa-job-scraper-email"
+          )
+
+          echo "Fetching existing Confluent service accounts..."
+          SA_JSON=$(curl -sf -u "${CONFLUENT_CLOUD_API_KEY}:${CONFLUENT_CLOUD_API_SECRET}" \
+            "https://api.confluent.cloud/iam/v2/service-accounts?page_size=100")
+
+          for tf_key in "${!SA_DISPLAY_NAMES[@]}"; do
+            display_name="${SA_DISPLAY_NAMES[$tf_key]}"
+            sa_resource_addr="module.service_accounts.confluent_service_account.this[\"${tf_key}\"]"
+            key_resource_addr="module.service_accounts.confluent_api_key.this[\"${tf_key}\"]"
+
+            if terraform state list | grep -F "${sa_resource_addr}" >/dev/null 2>&1; then
+              echo "Service account ${display_name} already imported into state; skipping import."
+            else
+              sa_id=$(echo "${SA_JSON}" | jq -r --arg name "${display_name}" '.data[]? | select(.display_name == $name) | .id' | head -n1)
+              if [ -z "${sa_id}" ] || [ "${sa_id}" = "null" ]; then
+                echo "No existing service account found for ${display_name}; Terraform will create it."
+                continue
+              fi
+              echo "Importing existing service account ${display_name} (${sa_id})"
+              terraform import -input=false "${sa_resource_addr}" "${sa_id}" || true
+            fi
+
+            if terraform state list | grep -F "${key_resource_addr}" >/dev/null 2>&1; then
+              echo "API key for ${display_name} already imported into state; skipping import."
+              continue
+            fi
+
+            sa_id=$(echo "${SA_JSON}" | jq -r --arg name "${display_name}" '.data[]? | select(.display_name == $name) | .id' | head -n1)
+            if [ -z "${sa_id}" ] || [ "${sa_id}" = "null" ]; then
+              continue
+            fi
+
+            key_display_name="${display_name}-kafka-api-key"
+            KEY_JSON=$(curl -sf -u "${CONFLUENT_CLOUD_API_KEY}:${CONFLUENT_CLOUD_API_SECRET}" \
+              "https://api.confluent.cloud/iam/v2/api-keys?spec.owner=${sa_id}&page_size=100")
+            key_id=$(echo "${KEY_JSON}" | jq -r --arg name "${key_display_name}" '.data[]? | select(.spec.display_name == $name) | .id' | head -n1)
+            if [ -z "${key_id}" ] || [ "${key_id}" = "null" ]; then
+              echo "No existing API key found for ${key_display_name}; Terraform will create one."
+              continue
+            fi
+            echo "Importing existing API key ${key_display_name} (${key_id}) for owner ${sa_id}"
+            terraform import -input=false "${key_resource_addr}" "${key_id}/${{ vars.CONFLUENT_CLUSTER_ID }}" || true
           done
           set -e
       - name: terraform apply (using the plan-confluent job's saved plan)
