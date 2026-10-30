@@ -43,7 +43,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: plan.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'Java|21'
       appSettings: concat(appSettings, [
         {
           name: 'AzureWebJobsStorage__accountName'
