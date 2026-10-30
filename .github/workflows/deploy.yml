@@ -568,6 +568,33 @@ jobs:
           # app settings come from Bicep/Key Vault) — drop it so it isn't shipped needlessly.
           rm -f local.settings.json
           zip -r ../function-app-package.zip . -x '*.DS_Store'
+
+      # The 502s persisted even with --async true, which rules out "long-lived synchronous
+      # connection exceeds the gateway idle timeout" as the whole story: the initial POST to
+      # the SCM/Kudu reverse proxy was itself getting a 502, which on a freshly created Flex
+      # Consumption plan means no worker instance has started yet and the Kudu site container
+      # hasn't booted. Nudge the platform into starting an instance by polling the SCM site
+      # until it answers with anything other than a 502/503/504 gateway error before ever
+      # attempting the real deploy call.
+      - name: Warm up SCM/Kudu site before deploying
+        run: |
+          set +e
+          app_host="https://${{ needs.setup.outputs.function_app_name }}.scm.azurewebsites.net"
+          for i in $(seq 1 15); do
+            code=$(curl -s -o /dev/null -m 30 -w '%{http_code}' "${app_host}/api/deployments" || echo "000")
+            echo "warm-up attempt ${i}: HTTP ${code}"
+            case "${code}" in
+              502|503|504|000)
+                sleep 30
+                ;;
+              *)
+                echo "SCM site responded with ${code}; proceeding to deploy."
+                exit 0
+                ;;
+            esac
+          done
+          echo "::warning::SCM site never stopped returning gateway errors during warm-up; proceeding anyway, the deploy step retries independently."
+          exit 0
       # --async true is required here, not just a nice-to-have: the packaged zip is a
       # Spring Boot Java artifact (~75-80MB with the azure-cosmos/kafka-clients/spring-boot
       # deps under lib/), and a *synchronous* `az functionapp deploy` keeps the HTTP
@@ -587,7 +614,9 @@ jobs:
           # is still flaky after the CLI exhausts its own attempts, retry the whole command a
           # few more times here with a longer cool-down, since the underlying cause (a cold/
           # restarting Flex Consumption SCM container) is transient.
-          for i in 1 2 3; do
+          waits=(60 120 180 300 300 300 300 300)
+          for i in "${!waits[@]}"; do
+            attempt=$((i + 1))
             if az functionapp deploy \
                 --resource-group java-functions-group \
                 --name ${{ needs.setup.outputs.function_app_name }} \
@@ -597,8 +626,9 @@ jobs:
                 --timeout 900000; then
               exit 0
             fi
-            echo "::warning::az functionapp deploy attempt ${i} failed; waiting 180s before retrying."
-            sleep 180
+            wait_s=${waits[$i]}
+            echo "::warning::az functionapp deploy attempt ${attempt} failed; waiting ${wait_s}s before retrying."
+            sleep "${wait_s}"
           done
           echo "::error::az functionapp deploy failed after repeated attempts."
           exit 1
