@@ -41,7 +41,7 @@ In CI (`.github/workflows/deploy.yml`), these same four values come from the
 `TF_BACKEND_RESOURCE_GROUP` / `TF_BACKEND_STORAGE_ACCOUNT` / `TF_BACKEND_CONTAINER` GitHub
 Variables and a `<bicep_env>.tfstate` key — see `.github/workflows/README.md`.
 
-## ⚠️ Required one-time import (before the first `apply`)
+## ⚠️ Existing-resource import (before the first `apply`)
 
 All 10 topics already exist — they were created manually against the shared cluster before this
 Terraform module existed (see the root README's "Confluent Kafka topic reference" section). If you
@@ -75,8 +75,10 @@ run `terraform apply` against a fresh state without importing first, the provide
    "to be created" — those are genuinely new and do not need importing.
 4. Only after step 3 shows a clean, expected plan should `terraform apply` be run — and only as
    part of the approval-gated Stage 8 pipeline (`.github/workflows/deploy.yml`'s `apply-confluent`
-   job), not ad hoc. That pipeline does **not** perform this import automatically — it assumes
-   steps 1–3 above have already been completed manually, exactly once, per environment.
+   job), not ad hoc. The pipeline automatically imports existing topics, service accounts, and
+   API keys in `plan-confluent` before it saves the plan. These manual steps are only needed when
+   managing Terraform state outside that pipeline; do not change state between the pipeline's plan
+   and apply jobs.
 
 ## Scope decision reminder
 
@@ -84,4 +86,3 @@ The 5 service accounts and their ACLs are **not yet consumed by the deployed Fun
 app currently authenticates with one shared `KAFKA_USERNAME`/`KAFKA_PASSWORD` credential
 (`KafkaProperties` has no per-listener override). See `docs/STAGE7_PLAN.md` for the follow-up
 required to adopt per-role credentials in code.
-

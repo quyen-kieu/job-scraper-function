@@ -101,32 +101,32 @@ locals {
   acl_entries = concat(
     # scraper: read commands + its consumer group, write completed
     [
-      { principal_id = module.service_accounts.service_account_ids["scraper"], resource_type = "TOPIC", resource_name = "job.scrape.commands", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = module.service_accounts.service_account_ids["scraper"], resource_type = "GROUP", resource_name = local.consumer_groups["scraper"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = module.service_accounts.service_account_ids["scraper"], resource_type = "TOPIC", resource_name = "job.scrape.completed", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["scraper"], ""), resource_type = "TOPIC", resource_name = "job.scrape.commands", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["scraper"], ""), resource_type = "GROUP", resource_name = local.consumer_groups["scraper"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["scraper"], ""), resource_type = "TOPIC", resource_name = "job.scrape.completed", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
     ],
     # normalizer: read completed + its consumer group, write postings.normalized
     [
-      { principal_id = module.service_accounts.service_account_ids["normalizer"], resource_type = "TOPIC", resource_name = "job.scrape.completed", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = module.service_accounts.service_account_ids["normalizer"], resource_type = "GROUP", resource_name = local.consumer_groups["normalizer"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = module.service_accounts.service_account_ids["normalizer"], resource_type = "TOPIC", resource_name = "job.postings.normalized", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["normalizer"], ""), resource_type = "TOPIC", resource_name = "job.scrape.completed", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["normalizer"], ""), resource_type = "GROUP", resource_name = local.consumer_groups["normalizer"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["normalizer"], ""), resource_type = "TOPIC", resource_name = "job.postings.normalized", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
     ],
     # persistence: read postings.normalized + its consumer group, write notifications.daily
     [
-      { principal_id = module.service_accounts.service_account_ids["persistence"], resource_type = "TOPIC", resource_name = "job.postings.normalized", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = module.service_accounts.service_account_ids["persistence"], resource_type = "GROUP", resource_name = local.consumer_groups["persistence"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = module.service_accounts.service_account_ids["persistence"], resource_type = "TOPIC", resource_name = "notifications.daily", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["persistence"], ""), resource_type = "TOPIC", resource_name = "job.postings.normalized", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["persistence"], ""), resource_type = "GROUP", resource_name = local.consumer_groups["persistence"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["persistence"], ""), resource_type = "TOPIC", resource_name = "notifications.daily", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
     ],
     # metrics: read postings.normalized + its consumer group, write metrics.monthly
     [
-      { principal_id = module.service_accounts.service_account_ids["metrics"], resource_type = "TOPIC", resource_name = "job.postings.normalized", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = module.service_accounts.service_account_ids["metrics"], resource_type = "GROUP", resource_name = local.consumer_groups["metrics"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = module.service_accounts.service_account_ids["metrics"], resource_type = "TOPIC", resource_name = "job.metrics.monthly", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["metrics"], ""), resource_type = "TOPIC", resource_name = "job.postings.normalized", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["metrics"], ""), resource_type = "GROUP", resource_name = local.consumer_groups["metrics"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["metrics"], ""), resource_type = "TOPIC", resource_name = "job.metrics.monthly", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
     ],
     # email: read notifications.daily + its consumer group only
     [
-      { principal_id = module.service_accounts.service_account_ids["email"], resource_type = "TOPIC", resource_name = "notifications.daily", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = module.service_accounts.service_account_ids["email"], resource_type = "GROUP", resource_name = local.consumer_groups["email"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["email"], ""), resource_type = "TOPIC", resource_name = "notifications.daily", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["email"], ""), resource_type = "GROUP", resource_name = local.consumer_groups["email"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
     ],
   )
 }
