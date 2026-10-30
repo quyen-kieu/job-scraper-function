@@ -28,7 +28,12 @@ tf_run_with_unlock_retry() {
 
   if [ ${status} -ne 0 ] && echo "${output}" | grep -q "Error acquiring the state lock"; then
     local lock_id
-    lock_id=$(echo "${output}" | sed -n 's/^[[:space:]]*ID:[[:space:]]*//p' | head -n1 | tr -d '[:space:]\r')
+    # Terraform's CLI wraps diagnostic output in a box-drawing format, e.g.:
+    #   │   ID:        dbfc5ebc-29f0-d56c-b173-981e42e27438
+    # A `sed` anchor on "^[[:space:]]*ID:" never matches because the line actually starts with
+    # the "│" box-drawing character, not whitespace — so instead match the UUID shape directly,
+    # wherever it appears in the output, which is robust to any surrounding prefix/formatting.
+    lock_id=$(echo "${output}" | grep -oE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n1)
 
     if [ -n "${lock_id}" ]; then
       echo "::warning::Detected a stale Terraform state lock (ID ${lock_id}), likely left behind by a previous cancelled/crashed run. Force-unlocking and retrying once: $*"
