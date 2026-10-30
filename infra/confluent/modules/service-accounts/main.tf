@@ -18,14 +18,14 @@ resource "confluent_service_account" "this" {
 }
 
 resource "confluent_api_key" "this" {
-  for_each     = confluent_service_account.this
+  for_each     = var.service_accounts
   display_name = "${each.value.display_name}-kafka-api-key"
   description  = "Kafka API key for ${each.value.display_name}"
 
   owner {
-    id          = each.value.id
-    api_version = each.value.api_version
-    kind        = each.value.kind
+    id          = confluent_service_account.this[each.key].id
+    api_version = confluent_service_account.this[each.key].api_version
+    kind        = confluent_service_account.this[each.key].kind
   }
 
   managed_resource {
@@ -42,4 +42,3 @@ resource "confluent_api_key" "this" {
     prevent_destroy = true
   }
 }
-
