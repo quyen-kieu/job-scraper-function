@@ -1012,11 +1012,14 @@ validate
   default. `deploy-app` overrides this per environment with
   `-DfunctionAppName=job-scraper-function-<env>` on the Maven command line (a plain
   `<properties>` entry is overridable via `-D`) rather than baking an environment into source.
-- **`deploy-app` reuses the existing `azure-functions-maven-plugin` `deploy` goal** (a
-  provision-and-deploy upsert) instead of a hand-rolled `az functionapp deploy` zip-based path.
-  Safe against the already Bicep-provisioned app today (idempotent; only merges the one
-  `FUNCTIONS_EXTENSION_VERSION` setting declared in `pom.xml`) but is a real coupling worth
-  monitoring if the plugin's assumptions ever drift from Bicep's resource shape.
+- **`deploy-app` uses a plain `az functionapp deploy` zip upload**, not the
+  `azure-functions-maven-plugin`'s `deploy` goal. That plugin goal was tried first (a
+  provision-and-deploy upsert, reusing the existing Bicep-provisioned app) but proved incompatible
+  with Flex Consumption: even with `appServicePlanName`/`region` aligned to Bicep, the plugin's
+  update-site-config payload still sets `linuxFxVersion` internally from its `<runtime>` block,
+  which Flex Consumption rejects outright. A zip upload only ships code (the jar/host.json/lib
+  staged by `mvn package` in the `package` job) and never touches `siteConfig`/runtime properties,
+  so it can't hit that class of bug — those properties are owned exclusively by Bicep.
 - **The replay workflow re-triggers a live on-demand scrape, not historical reprocessing.**
   `MonthlyMetricRebuildService` (Stage 5) exists specifically for rebuilding a month from
   `job-observations` after a normalization rule change, but has **no Function trigger** by
