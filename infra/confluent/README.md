@@ -124,9 +124,31 @@ Setting only `TF_VAR_kafka_api_key`/`TF_VAR_kafka_api_secret` (as `terraform pla
 **not enough** for import — it silently fails to authenticate, nothing lands in state, and the
 next `terraform plan` re-plans a `create` for a topic that already exists, which then 400s in
 `apply-confluent` with `Topic '...' already exists`. `deploy.yml`'s topic-import step resolves
-`IMPORT_KAFKA_REST_ENDPOINT` dynamically via `terraform console` (`data.confluent_kafka_cluster.
-shared.rest_endpoint`) since there's no GitHub var for it. If ACL imports are ever added to the
-pipeline, they need the same three `IMPORT_KAFKA_*` variables for the same reason.
+`IMPORT_KAFKA_REST_ENDPOINT` dynamically via a direct `curl` to the Confluent Cloud Cluster
+Management API (`GET https://api.confluent.cloud/cmk/v2/clusters/<cluster_id>?environment=<env_id>`,
+field `.spec.http_endpoint`) — **not** `terraform console` (see the next gotcha for why). If ACL
+imports are ever added to the pipeline, they need the same three `IMPORT_KAFKA_*` variables for the
+same reason.
+
+### ⚠️ Gotcha: never use `terraform console` (or anything that forces a state refresh) in CI
+
+An earlier version of the topic-import step resolved the REST endpoint with
+`echo 'data.confluent_kafka_cluster.shared.rest_endpoint' | terraform console`. This caused the
+`plan-confluent` job to hang for 30+ minutes with no further log output. `terraform console`
+performs a full state refresh (re-reading every resource/data source already in state — all 5
+service accounts, 5 API keys, any previously-imported topics, plus the cluster/environment data
+sources) and holds the state lock for the duration; if the Confluent provider hits any
+rate-limit/retry backoff while refreshing, the whole step can stall far past any reasonable
+timeout, and stderr redirection (`2>/dev/null`) hides the "Acquiring state lock..."/refresh
+progress messages that would otherwise explain the stall.
+
+**Rule of thumb:** any CI script step that only needs to *read* a Confluent Cloud attribute (REST
+endpoint, cluster ID, environment ID, resource existence) should call the Confluent Cloud REST API
+directly with `curl` (as the service-account/API-key import step already does), never
+`terraform console`, `terraform refresh`, or `terraform plan -refresh=true` just to extract one
+value. Reserve actual `terraform` state-mutating commands (`import`, `plan`, `apply`) for when
+they're unavoidable, and pass `-lock-timeout=120s` to all of them so a stuck/stale backend lock
+fails fast with a clear error instead of hanging for the entire job's time limit.
 
 ## Scope decision reminder
 
