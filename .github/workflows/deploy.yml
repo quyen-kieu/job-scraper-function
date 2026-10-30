@@ -284,10 +284,19 @@ jobs:
           # Without these, import silently fails to authenticate, nothing lands in state, and
           # `terraform plan` re-plans a `create` for a topic that already exists in Confluent —
           # which is exactly the "400 Bad Request: Topic '...' already exists" failure this fixes.
+          #
+          # NOTE: resolve the REST endpoint via a direct Confluent Cloud "cmk/v2" REST call, NOT
+          # `terraform console` — `terraform console` forces a full state refresh (re-reading
+          # every already-imported/created resource) and holds the state lock while doing so,
+          # which can stall for a very long time (observed: 30+ minutes) if the Confluent provider
+          # hits any rate-limit/retry backoff during that refresh. A plain curl touches no
+          # Terraform state at all, so there's nothing to lock or refresh.
           echo "Resolving Kafka cluster REST endpoint for topic import..."
-          REST_ENDPOINT=$(echo 'data.confluent_kafka_cluster.shared.rest_endpoint' | terraform console 2>/dev/null | tr -d '"')
+          CLUSTER_JSON=$(curl -sf --max-time 30 -u "${TF_VAR_confluent_cloud_api_key}:${TF_VAR_confluent_cloud_api_secret}" \
+            "https://api.confluent.cloud/cmk/v2/clusters/${TF_VAR_confluent_cluster_id}?environment=${TF_VAR_confluent_environment_id}")
+          REST_ENDPOINT=$(echo "${CLUSTER_JSON}" | jq -r '.spec.http_endpoint // empty')
           if [ -z "${REST_ENDPOINT}" ]; then
-            echo "::error::Could not resolve the Kafka cluster REST endpoint via 'terraform console'. Topic imports below will likely fail to authenticate."
+            echo "::error::Could not resolve the Kafka cluster REST endpoint via the Confluent cmk/v2 API. Topic imports below will likely fail to authenticate."
           else
             echo "Resolved REST endpoint: ${REST_ENDPOINT}"
           fi
@@ -315,7 +324,7 @@ jobs:
             # TF_VAR_* / bad credentials) must be visible in the log, otherwise `terraform plan`
             # below will happily re-plan a `create` for a resource that already exists in
             # Confluent, and `apply-confluent` fails later with a 400/409 that looks unrelated.
-            import_output=$(terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" 2>&1)
+            import_output=$(terraform import -input=false -lock-timeout=120s "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" 2>&1)
             import_status=$?
             echo "${import_output}"
             if [ ${import_status} -ne 0 ]; then
@@ -370,7 +379,7 @@ jobs:
                 continue
               fi
               echo "Importing existing service account ${display_name} (${sa_id})"
-              import_output=$(terraform import -input=false "${sa_resource_addr}" "${sa_id}" 2>&1)
+              import_output=$(terraform import -input=false -lock-timeout=120s "${sa_resource_addr}" "${sa_id}" 2>&1)
               import_status=$?
               echo "${import_output}"
               if [ ${import_status} -ne 0 ]; then
@@ -397,7 +406,7 @@ jobs:
               continue
             fi
             echo "Importing existing API key ${key_display_name} (${key_id}) for owner ${sa_id}"
-            import_output=$(terraform import -input=false "${key_resource_addr}" "${key_id}/${{ vars.CONFLUENT_CLUSTER_ID }}" 2>&1)
+            import_output=$(terraform import -input=false -lock-timeout=120s "${key_resource_addr}" "${key_id}/${{ vars.CONFLUENT_CLUSTER_ID }}" 2>&1)
             import_status=$?
             echo "${import_output}"
             if [ ${import_status} -ne 0 ]; then
@@ -406,7 +415,7 @@ jobs:
           done
           set -e
       - name: terraform plan
-        run: terraform plan -input=false -out=tfplan
+        run: terraform plan -input=false -lock-timeout=120s -out=tfplan
         env:
           TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
           TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
@@ -481,7 +490,7 @@ jobs:
             -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate" \
             -backend-config="use_azuread_auth=true"
       - name: terraform apply (using the plan-confluent job's saved plan)
-        run: terraform apply -input=false -auto-approve tfplan
+        run: terraform apply -input=false -lock-timeout=120s -auto-approve tfplan
 
   # README item 9 + closes the Stage 7 forward-reference for populating Key Vault secrets.
   deploy-app:
