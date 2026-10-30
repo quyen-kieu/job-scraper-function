@@ -60,7 +60,7 @@ it) is sufficient since `roleAssignments/write` is inherited down to child resou
 | `TF_BACKEND_CONTAINER` | Variable | `confluent`. |
 | `KAFKA_CLIENT_API_KEY` / `KAFKA_CLIENT_API_SECRET` | Secrets | Reused directly from the already-working `local.settings.json` (the same cluster-scoped credential proven during Stage 6 manual end-to-end testing). |
 | `RESEND_API_KEY` | Secret | Reused directly from `local.settings.json` (the same key that sent the confirmed Stage 6 test email). |
-
+ 
 ## 2b. Still required — Confluent side (not something an agent can obtain on your behalf)
 
 | Name | Kind | Where to get it |
