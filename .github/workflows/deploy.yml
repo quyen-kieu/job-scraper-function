@@ -569,12 +569,23 @@ jobs:
           rm -f local.settings.json
           zip -r ../function-app-package.zip . -x '*.DS_Store'
       - name: az functionapp deploy (zip deploy)
+        # The SCM/Kudu endpoint intermittently returns 502 right after apply-azure updates the app
+        # (site restart / config propagation), so retry with backoff instead of failing outright.
         run: |
-          az functionapp deploy \
-            --resource-group java-functions-group \
-            --name ${{ needs.setup.outputs.function_app_name }} \
-            --src-path target/azure-functions/function-app-package.zip \
-            --type zip
+          set -uo pipefail
+          for attempt in 1 2 3 4 5; do
+            if az functionapp deploy \
+              --resource-group java-functions-group \
+              --name ${{ needs.setup.outputs.function_app_name }} \
+              --src-path target/azure-functions/function-app-package.zip \
+              --type zip; then
+              exit 0
+            fi
+            echo "Deploy attempt ${attempt} failed; retrying in $((attempt * 30))s..."
+            sleep $((attempt * 30))
+          done
+          echo "::error::az functionapp deploy failed after 5 attempts"
+          exit 1
 
   # README item 12.
   smoke-test-kafka:
