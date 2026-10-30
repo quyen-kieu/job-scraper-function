@@ -22,7 +22,7 @@ runbook was handled.
 | `infra/confluent/main.tf` already manages topics/service-accounts/ACLs against the **existing** cluster | Stage 7 | `apply-confluent` = `terraform apply`; the one-time `terraform import` runbook (`infra/confluent/README.md`) must run once, manually, before the first CI-driven apply. |
 | Key Vault secrets `kafka-username`, `kafka-password`, `resend-api-key` are created with **empty placeholders** by Bicep | Stage 7 | Stage 8's `deploy-app` job is the natural place to populate them for real from GitHub Secrets, closing that Stage 7 forward-reference ("populated out-of-band... or a future Stage 8 automated step"). |
 | `pom.xml`'s `azure-functions-maven-plugin` hardcodes `<appName>${functionAppName}</appName>` = `job-scraper-function-20260815154131779`, but Bicep names the Function App `job-scraper-function-dev` / `job-scraper-function-prod` | `pom.xml` vs. `infra/azure/main.bicep`'s `functionAppName` variable | These two names have diverged since Stage 7. Stage 8 does **not** edit `pom.xml` (avoids hardcoding an environment into source); instead the CD workflow overrides `-DfunctionAppName=job-scraper-function-<env>` on the Maven command line, since `functionAppName` is a plain `<properties>` entry and Maven properties are overridable via `-D`. |
-| `azure-functions-maven-plugin`'s `deploy` goal is provision-**and**-deploy (upsert), not deploy-only | Plugin behavior | Running it against a Bicep-provisioned app is safe (idempotent upsert; only merges the one `FUNCTIONS_EXTENSION_VERSION` app setting declared in `pom.xml`, does not remove Bicep's other settings) but is a real risk if the plugin's own resource-shape assumptions ever drift from Bicep's. Documented as a scope decision (§4) rather than writing a parallel `az functionapp deploy` zip-based path from scratch. |
+| `azure-functions-maven-plugin`'s `deploy` goal does not reliably support Flex Consumption apps (as of plugin 1.24.0) | Plugin behavior, discovered during Stage 8 rollout | Even with `appServicePlanName`/`region` aligned to Bicep's real values, the plugin's update-site-config payload still sets `linuxFxVersion` internally from its `<runtime>` block, and Flex Consumption rejects that property outright. Resolved by switching `deploy-app` to a plain `az functionapp deploy` zip upload (§4), which only uploads code and never touches `siteConfig`/runtime properties — those remain owned exclusively by Bicep. |
 | Every Kafka topic has 1 partition; `JOB_SCRAPER_REQUEST_DELAY` throttles scraping | Stage 7 cost analysis | The smoke test in §2.6 can safely re-trigger a real on-demand scrape without fear of overwhelming Cosmos DB's free-tier throughput. |
 | No `replay`/rebuild HTTP trigger exists; `MonthlyMetricRebuildService` (Stage 5) is an internal-only service with **no Function trigger**, by deliberate design ("preserving the fixed function topology") | Stage 5 README note | The README's Stage 8 item 13 ("manual replay workflow for a selected company and date range") cannot be wired to true historical reprocessing without adding a new Function trigger, which would contradict that Stage 5 decision. Resolved as a scope decision in §4: the replay workflow re-triggers a **live** on-demand scrape (already exposed via `OnDemandScrapeCommandProducer`), and the historical-rebuild gap is documented, not silently papered over. |
 
@@ -179,12 +179,17 @@ manual checklist instead.
    since `functionAppName` is a plain Maven property. `pom.xml`'s literal default
    (`job-scraper-function-20260815154131779`) remains only as a local-dev fallback for anyone
    running `mvn azure-functions:deploy` by hand without the override.
-2. **`deploy-app` reuses the existing `azure-functions-maven-plugin` `deploy` goal** (a
-   provision-and-deploy upsert) rather than writing a new `az functionapp deploy` zip-based path.
-   This is safe against a Bicep-provisioned app today (idempotent; only merges the one
-   `FUNCTIONS_EXTENSION_VERSION` setting declared in `pom.xml`, doesn't remove Bicep's other
-   settings) but is a real coupling to monitor if the plugin's assumptions ever drift from Bicep's
-   resource shape — flagged, not silently accepted forever.
+2. **`deploy-app` uses a plain `az functionapp deploy` zip upload, not the
+   `azure-functions-maven-plugin`'s `deploy` goal.** That goal (a provision-and-deploy upsert) was
+   tried first, reusing the already Bicep-provisioned app, but proved incompatible with Flex
+   Consumption: even after aligning `appServicePlanName`/`region` to Bicep's actual values, the
+   plugin's update-site-config payload still sets `linuxFxVersion` internally from its `<runtime>`
+   block, and Flex Consumption rejects that property outright (`BadRequest: ... for Flex
+   Consumption sites is invalid.`) — the same incompatibility Bicep itself hit before that property
+   was removed from `function-app.bicep`. A zip upload only ships code (the jar/host.json/lib
+   staged by `mvn package`'s `package-functions` execution) and never touches `siteConfig`/runtime
+   properties at all, so it structurally cannot hit this class of bug; those properties remain
+   owned exclusively by Bicep.
 3. **The replay workflow (README item 13) re-triggers a live on-demand scrape, not a historical
    reprocessing.** `MonthlyMetricRebuildService` (Stage 5) exists specifically for rebuilding a
    month from `job-observations` after a normalization rule change, but has **no Function

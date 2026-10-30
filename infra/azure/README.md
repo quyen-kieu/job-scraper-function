@@ -71,11 +71,13 @@ rejects. The fix: `keyvault.bicep` never takes the Function App's principal id a
 - Cosmos and Blob Storage keep key/connection-string auth (Key Vault only changes *where* the
   secret is stored, not *how* the app authenticates). Adopting managed-identity/RBAC-based Cosmos
   and Storage access is a Stage 7+ hardening follow-up requiring a Java code change.
-- `pom.xml`'s `azure-functions-maven-plugin` config still hardcodes `resourceGroup`/
-  `appServicePlanName`/`region`, which match these Bicep defaults today but aren't read from the
-  same source — keep them in sync manually if either changes. `appName` is overridden per
-  environment at deploy time by `.github/workflows/deploy.yml` (see `docs/STAGE8_PLAN.md`), so
-  only `appName` itself is exempt from this manual-sync concern.
+- `pom.xml`'s `azure-functions-maven-plugin` config has `appServicePlanName`/`region` Maven
+  properties matching these Bicep defaults today, but they aren't read from the same source — keep
+  them in sync manually if either changes. In practice this plugin's `deploy` goal is no longer used
+  by CI (see `docs/STAGE8_PLAN.md` — it doesn't reliably support Flex Consumption); `deploy-app`
+  deploys with a plain `az functionapp deploy` zip upload instead, overriding only
+  `functionAppName`/`appServicePlanName`/`azureRegion` where still relevant for local/manual use of
+  the plugin's `package` goal.
 
 ## Estimated Azure costs
 
