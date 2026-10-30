@@ -291,13 +291,33 @@ jobs:
               continue
             fi
             echo "Importing existing topic: ${topic}"
-            terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" || true
+            # NOTE: do not silently swallow the exit code here — a failed import (e.g. missing
+            # TF_VAR_* / bad credentials) must be visible in the log, otherwise `terraform plan`
+            # below will happily re-plan a `create` for a resource that already exists in
+            # Confluent, and `apply-confluent` fails later with a 400/409 that looks unrelated.
+            import_output=$(terraform import -input=false "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" 2>&1)
+            import_status=$?
+            echo "${import_output}"
+            if [ ${import_status} -ne 0 ]; then
+              echo "::warning::Import failed for topic ${topic} (exit ${import_status}). If the topic genuinely doesn't exist yet in Confluent, Terraform will create it in the plan below; otherwise this is a bug that must be fixed before apply."
+            fi
           done
           set -e
       - name: Import existing shared Confluent service accounts and API keys if already present
         env:
+          # curl calls below need the plain (non-TF_VAR_) org API key/secret.
           CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
           CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          # `terraform import` itself needs the full set of TF_VAR_* values to evaluate the
+          # provider config / data sources — without these it fails with "No value for required
+          # variable", which (previously) was silently swallowed by `|| true`, so nothing ever
+          # actually got imported and every plan/apply tried to re-create these resources.
+          TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          TF_VAR_kafka_api_key: ${{ secrets.KAFKA_CLIENT_API_KEY }}
+          TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
+          TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
+          TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
         run: |
           set +e
 
@@ -312,6 +332,9 @@ jobs:
           echo "Fetching existing Confluent service accounts..."
           SA_JSON=$(curl -sf -u "${CONFLUENT_CLOUD_API_KEY}:${CONFLUENT_CLOUD_API_SECRET}" \
             "https://api.confluent.cloud/iam/v2/service-accounts?page_size=100")
+          if [ $? -ne 0 ] || [ -z "${SA_JSON}" ]; then
+            echo "::error::Failed to fetch service accounts from Confluent Cloud IAM v2 API. Check CONFLUENT_CLOUD_API_KEY/SECRET."
+          fi
 
           for tf_key in "${!SA_DISPLAY_NAMES[@]}"; do
             display_name="${SA_DISPLAY_NAMES[$tf_key]}"
@@ -327,7 +350,12 @@ jobs:
                 continue
               fi
               echo "Importing existing service account ${display_name} (${sa_id})"
-              terraform import -input=false "${sa_resource_addr}" "${sa_id}" || true
+              import_output=$(terraform import -input=false "${sa_resource_addr}" "${sa_id}" 2>&1)
+              import_status=$?
+              echo "${import_output}"
+              if [ ${import_status} -ne 0 ]; then
+                echo "::error::Import failed for service account ${display_name} (${sa_id}, exit ${import_status}). apply-confluent will fail with a 409 Conflict until this is fixed."
+              fi
             fi
 
             if terraform state list | grep -F "${key_resource_addr}" >/dev/null 2>&1; then
@@ -349,7 +377,12 @@ jobs:
               continue
             fi
             echo "Importing existing API key ${key_display_name} (${key_id}) for owner ${sa_id}"
-            terraform import -input=false "${key_resource_addr}" "${key_id}/${{ vars.CONFLUENT_CLUSTER_ID }}" || true
+            import_output=$(terraform import -input=false "${key_resource_addr}" "${key_id}/${{ vars.CONFLUENT_CLUSTER_ID }}" 2>&1)
+            import_status=$?
+            echo "${import_output}"
+            if [ ${import_status} -ne 0 ]; then
+              echo "::error::Import failed for API key ${key_display_name} (${key_id}, exit ${import_status})."
+            fi
           done
           set -e
       - name: terraform plan

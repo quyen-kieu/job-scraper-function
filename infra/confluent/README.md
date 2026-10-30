@@ -80,6 +80,30 @@ run `terraform apply` against a fresh state without importing first, the provide
    managing Terraform state outside that pipeline; do not change state between the pipeline's plan
    and apply jobs.
 
+### ⚠️ Gotcha: every `terraform import` step in CI needs the full `TF_VAR_*` set
+
+`terraform import` evaluates the **entire** configuration graph (provider block, data sources,
+locals) before it can import a single resource instance — not just the one resource being
+imported. If any `TF_VAR_confluent_cloud_api_key` / `TF_VAR_confluent_cloud_api_secret` /
+`TF_VAR_kafka_api_key` / `TF_VAR_kafka_api_secret` / `TF_VAR_confluent_environment_id` /
+`TF_VAR_confluent_cluster_id` value is missing from a given import step's `env:` block, the
+`terraform import` command fails immediately with `Error: No value for required variable`.
+
+This is easy to miss because the import loops in `deploy.yml` wrap each `terraform import` call so
+a failure doesn't abort the step (a topic/service-account/API-key that genuinely doesn't exist yet
+is expected to "fail" to import and fall through to being created by `terraform plan`/`apply`
+instead). If you only print/log the failure instead of hard-failing the step, a **missing
+`TF_VAR_*`** looks identical to "doesn't exist yet" — nothing gets imported, `terraform plan`
+re-plans a `create` for a resource that already exists in Confluent, and `apply-confluent` later
+fails with a `409 Conflict: ... already in use` or `400 Bad Request: ... already exists`.
+
+When adding or editing an import step in `deploy.yml`:
+- Set **all six** `TF_VAR_*` values in that step's `env:` block (copy them from the `terraform
+  plan` step below it — don't assume they're inherited from another step).
+- Never discard the `terraform import` command's stderr. Capture it and `echo` it (or emit a
+  `::warning::`/`::error::` annotation) so a genuine bug is visible in the Actions log instead of
+  silently producing a plan full of unwanted `create`s.
+
 ## Scope decision reminder
 
 The 5 service accounts and their ACLs are **not yet consumed by the deployed Function App** — the
