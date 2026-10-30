@@ -1,14 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <groupId>com.jobscraper</groupId>
     <artifactId>job-scraper-function</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-
     <name>Azure Java Functions</name>
-
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>21</java.version>
@@ -17,8 +14,9 @@
         <azure.functions.java.library.version>2.2.0</azure.functions.java.library.version>
         <azure.cosmos.version>4.63.0</azure.cosmos.version>
         <functionAppName>job-scraper-function-20260815154131779</functionAppName>
+        <appServicePlanName>jobscraper-plan-prod-cus</appServicePlanName>
+        <azureRegion>centralus</azureRegion>
     </properties>
-
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -30,7 +28,6 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -102,7 +99,6 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
     <build>
         <plugins>
             <plugin>
@@ -133,10 +129,10 @@
                     <!-- function app resource group -->
                     <resourceGroup>java-functions-group</resourceGroup>
                     <!-- function app service plan name -->
-                    <appServicePlanName>java-functions-app-service-plan</appServicePlanName>
+                    <appServicePlanName>${appServicePlanName}</appServicePlanName>
                     <!-- function app region-->
                     <!-- refers https://github.com/microsoft/azure-maven-plugins/wiki/Azure-Functions:-Configuration-Details#supported-regions for all valid values -->
-                    <region>westus</region>
+                    <region>${azureRegion}</region>
                     <!-- function pricingTier, default to be consumption if not specified -->
                     <!-- refers https://github.com/microsoft/azure-maven-plugins/wiki/Azure-Functions:-Configuration-Details#supported-pricing-tiers for all valid values -->
                     <!-- <pricingTier></pricingTier> -->
@@ -148,12 +144,10 @@
                         <os>linux</os>
                         <javaVersion>21</javaVersion>
                     </runtime>
-                    <!-- NOTE: no <appSettings> here. This previously set FUNCTIONS_EXTENSION_VERSION,
-                         but Flex Consumption plans (see infra/azure/modules/function-app.bicep)
-                         reject that app setting outright (BadRequest: "... for Flex Consumption
-                         sites is invalid. Please remove or rename it before retrying."), the same
-                         way the ARM template does — the runtime/version are declared once via
-                         Bicep's functionAppConfig.runtime instead. -->
+                    <!-- No <appSettings> here: FUNCTIONS_EXTENSION_VERSION is rejected outright by
+                         Flex Consumption plans (BadRequest: "... for Flex Consumption sites is
+                         invalid."); the runtime/version are declared once via Bicep's
+                         functionAppConfig.runtime instead. -->
                 </configuration>
                 <executions>
                     <execution>

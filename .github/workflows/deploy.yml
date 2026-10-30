@@ -556,13 +556,19 @@ jobs:
 
       # Scope decision (docs/STAGE8_PLAN.md §4.2): reuses the existing azure-functions-maven-plugin
       # `deploy` goal (provision-and-deploy upsert) rather than a hand-rolled zip-deploy script.
-      # Safe against the already Bicep-provisioned app (idempotent; only merges the one
-      # FUNCTIONS_EXTENSION_VERSION setting declared in pom.xml). -DfunctionAppName overrides
-      # pom.xml's hardcoded default per environment (see docs/STAGE8_PLAN.md §0).
+      # Safe against the already Bicep-provisioned app ONLY if appServicePlanName/region are
+      # overridden to match exactly what Bicep used (infra/azure/main.bicep's `planName`/`location`
+      # variables) — otherwise the plugin thinks the existing app's plan/region differ from its
+      # config, assumes the plan needs to be (re)created, and fails with an opaque reactor
+      # NullPointerException while colliding with the already-existing Flex Consumption plan.
+      # -DfunctionAppName/-DappServicePlanName override pom.xml's hardcoded defaults per environment
+      # (see docs/STAGE8_PLAN.md §0).
       - name: mvn azure-functions:deploy
         run: |
           mvn -B azure-functions:deploy \
-            -DfunctionAppName=${{ needs.setup.outputs.function_app_name }}
+            -DfunctionAppName=${{ needs.setup.outputs.function_app_name }} \
+            -DappServicePlanName=jobscraper-plan-${{ needs.setup.outputs.bicep_env }}-cus \
+            -DazureRegion=centralus
 
   # README item 12.
   smoke-test-kafka:
