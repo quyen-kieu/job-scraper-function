@@ -275,6 +275,7 @@ jobs:
           TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
         run: |
           set +e
+          source ./ci/with-stale-lock-retry.sh
 
           # `confluent_kafka_topic` sets its credentials via a per-resource `credentials { }`
           # block (see modules/topics/main.tf) rather than the provider block. For that shape,
@@ -324,7 +325,9 @@ jobs:
             # TF_VAR_* / bad credentials) must be visible in the log, otherwise `terraform plan`
             # below will happily re-plan a `create` for a resource that already exists in
             # Confluent, and `apply-confluent` fails later with a 400/409 that looks unrelated.
-            import_output=$(terraform import -input=false -lock-timeout=120s "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}" 2>&1)
+            # tf_run_with_unlock_retry (sourced above) auto-recovers from a stale state lock left
+            # by a previous cancelled/crashed run — see ci/with-stale-lock-retry.sh.
+            import_output=$(tf_run_with_unlock_retry terraform import -input=false -lock-timeout=120s "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}")
             import_status=$?
             echo "${import_output}"
             if [ ${import_status} -ne 0 ]; then
@@ -349,6 +352,7 @@ jobs:
           TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
         run: |
           set +e
+          source ./ci/with-stale-lock-retry.sh
 
           declare -A SA_DISPLAY_NAMES=(
             [scraper]="sa-job-scraper-scraper"
@@ -379,7 +383,7 @@ jobs:
                 continue
               fi
               echo "Importing existing service account ${display_name} (${sa_id})"
-              import_output=$(terraform import -input=false -lock-timeout=120s "${sa_resource_addr}" "${sa_id}" 2>&1)
+              import_output=$(tf_run_with_unlock_retry terraform import -input=false -lock-timeout=120s "${sa_resource_addr}" "${sa_id}")
               import_status=$?
               echo "${import_output}"
               if [ ${import_status} -ne 0 ]; then
@@ -406,7 +410,7 @@ jobs:
               continue
             fi
             echo "Importing existing API key ${key_display_name} (${key_id}) for owner ${sa_id}"
-            import_output=$(terraform import -input=false -lock-timeout=120s "${key_resource_addr}" "${key_id}/${{ vars.CONFLUENT_CLUSTER_ID }}" 2>&1)
+            import_output=$(tf_run_with_unlock_retry terraform import -input=false -lock-timeout=120s "${key_resource_addr}" "${key_id}/${{ vars.CONFLUENT_CLUSTER_ID }}")
             import_status=$?
             echo "${import_output}"
             if [ ${import_status} -ne 0 ]; then
@@ -415,7 +419,12 @@ jobs:
           done
           set -e
       - name: terraform plan
-        run: terraform plan -input=false -lock-timeout=120s -out=tfplan
+        run: |
+          source ./ci/with-stale-lock-retry.sh
+          output=$(tf_run_with_unlock_retry terraform plan -input=false -lock-timeout=120s -out=tfplan)
+          status=$?
+          echo "${output}"
+          exit ${status}
         env:
           TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
           TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
@@ -490,7 +499,12 @@ jobs:
             -backend-config="key=${{ needs.setup.outputs.bicep_env }}.tfstate" \
             -backend-config="use_azuread_auth=true"
       - name: terraform apply (using the plan-confluent job's saved plan)
-        run: terraform apply -input=false -lock-timeout=120s -auto-approve tfplan
+        run: |
+          source ./ci/with-stale-lock-retry.sh
+          output=$(tf_run_with_unlock_retry terraform apply -input=false -lock-timeout=120s -auto-approve tfplan)
+          status=$?
+          echo "${output}"
+          exit ${status}
 
   # README item 9 + closes the Stage 7 forward-reference for populating Key Vault secrets.
   deploy-app:

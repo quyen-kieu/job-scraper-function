@@ -150,6 +150,39 @@ value. Reserve actual `terraform` state-mutating commands (`import`, `plan`, `ap
 they're unavoidable, and pass `-lock-timeout=120s` to all of them so a stuck/stale backend lock
 fails fast with a clear error instead of hanging for the entire job's time limit.
 
+### ⚠️ Gotcha: stale state lock after a cancelled/crashed run (`state blob is already locked`)
+
+A `plan-confluent`/`apply-confluent` run that gets cancelled or killed mid-operation (e.g. someone
+manually cancels the 30-minute `terraform console` hang above) never runs Terraform's deferred
+"release the azurerm blob lease" step. The lease is left behind, and **every** subsequent
+`terraform import`/`plan`/`apply` in later runs then fails fast (thanks to `-lock-timeout=120s`)
+with:
+
+```
+Error: Error acquiring the state lock
+Error message: state blob is already locked
+```
+
+This is safe to auto-recover from in this specific pipeline, because the workflow's top-level
+`concurrency: { group: deploy-${{ github.ref }} }` guarantees only one run per ref is ever active,
+and every job touching this state executes strictly sequentially via `needs:` — so a lock error
+here can only mean a stale lease, never a real concurrent writer.
+
+`infra/confluent/ci/with-stale-lock-retry.sh` provides a `tf_run_with_unlock_retry` bash function
+that every `terraform import`/`plan`/`apply` call in `deploy.yml` is wrapped with. It detects the
+`Error acquiring the state lock` message, parses the `Lock Info` block's `ID:` value out of the
+error output, runs `terraform force-unlock -force <id>`, and retries the original command exactly
+once. No manual intervention is needed — if you ever see the error above in CI, it means something
+upstream (a crash, a cancellation, a runner timeout) genuinely interrupted a prior run; the retry
+handles the cleanup automatically on the next invocation.
+
+If you need to clear a stale lock manually (e.g. running `terraform` locally against the same
+remote state), the lock ID is printed in the error's `Lock Info` block:
+
+```powershell
+terraform force-unlock -force <lock-id>
+```
+
 ## Scope decision reminder
 
 The 5 service accounts and their ACLs are **not yet consumed by the deployed Function App** — the
