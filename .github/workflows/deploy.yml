@@ -275,6 +275,26 @@ jobs:
           TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
         run: |
           set +e
+
+          # `confluent_kafka_topic` sets its credentials via a per-resource `credentials { }`
+          # block (see modules/topics/main.tf) rather than the provider block. For that shape,
+          # `terraform import` does NOT read var.kafka_api_key/secret/rest_endpoint from the HCL
+          # config — it only works if IMPORT_KAFKA_API_KEY / IMPORT_KAFKA_API_SECRET /
+          # IMPORT_KAFKA_REST_ENDPOINT are exported as plain env vars for the import call itself.
+          # Without these, import silently fails to authenticate, nothing lands in state, and
+          # `terraform plan` re-plans a `create` for a topic that already exists in Confluent —
+          # which is exactly the "400 Bad Request: Topic '...' already exists" failure this fixes.
+          echo "Resolving Kafka cluster REST endpoint for topic import..."
+          REST_ENDPOINT=$(echo 'data.confluent_kafka_cluster.shared.rest_endpoint' | terraform console 2>/dev/null | tr -d '"')
+          if [ -z "${REST_ENDPOINT}" ]; then
+            echo "::error::Could not resolve the Kafka cluster REST endpoint via 'terraform console'. Topic imports below will likely fail to authenticate."
+          else
+            echo "Resolved REST endpoint: ${REST_ENDPOINT}"
+          fi
+          export IMPORT_KAFKA_API_KEY="${TF_VAR_kafka_api_key}"
+          export IMPORT_KAFKA_API_SECRET="${TF_VAR_kafka_api_secret}"
+          export IMPORT_KAFKA_REST_ENDPOINT="${REST_ENDPOINT}"
+
           for topic in \
             job.scrape.commands \
             job.scrape.commands.DLT \

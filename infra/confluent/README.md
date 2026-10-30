@@ -104,6 +104,30 @@ When adding or editing an import step in `deploy.yml`:
   `::warning::`/`::error::` annotation) so a genuine bug is visible in the Actions log instead of
   silently producing a plan full of unwanted `create`s.
 
+### ⚠️ Gotcha: importing cluster resources (topics/ACLs) needs `IMPORT_KAFKA_*`, not just `TF_VAR_*`
+
+`confluent_kafka_topic` and `confluent_kafka_acl` authenticate via a **per-resource**
+`credentials { key = ... secret = ... }` block (see `modules/topics/main.tf` /
+`modules/acls/main.tf`), not the provider block. For that configuration shape, `terraform import`
+does **not** read `var.kafka_api_key` / `var.kafka_api_secret` / `var.kafka_rest_endpoint` from the
+HCL — the Confluent provider instead requires plain (non-`TF_VAR_`) environment variables set for
+the duration of the import call:
+
+```bash
+export IMPORT_KAFKA_API_KEY="<kafka_api_key>"
+export IMPORT_KAFKA_API_SECRET="<kafka_api_secret>"
+export IMPORT_KAFKA_REST_ENDPOINT="<kafka_rest_endpoint>"
+terraform import 'module.topics.confluent_kafka_topic.this["<topic-name>"]' "<cluster-id>/<topic-name>"
+```
+
+Setting only `TF_VAR_kafka_api_key`/`TF_VAR_kafka_api_secret` (as `terraform plan`/`apply` need) is
+**not enough** for import — it silently fails to authenticate, nothing lands in state, and the
+next `terraform plan` re-plans a `create` for a topic that already exists, which then 400s in
+`apply-confluent` with `Topic '...' already exists`. `deploy.yml`'s topic-import step resolves
+`IMPORT_KAFKA_REST_ENDPOINT` dynamically via `terraform console` (`data.confluent_kafka_cluster.
+shared.rest_endpoint`) since there's no GitHub var for it. If ACL imports are ever added to the
+pipeline, they need the same three `IMPORT_KAFKA_*` variables for the same reason.
+
 ## Scope decision reminder
 
 The 5 service accounts and their ACLs are **not yet consumed by the deployed Function App** — the
