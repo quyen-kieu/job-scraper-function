@@ -161,7 +161,15 @@ jobs:
           java-version: "21"
           cache: maven
       - name: mvn clean package (skip tests, already run in unit-tests)
-        run: mvn -B -DskipTests clean package
+        # -DfunctionAppName must match the same override deploy-app's `mvn azure-functions:deploy`
+        # step uses (needs.setup.outputs.function_app_name), NOT pom.xml's hardcoded default. The
+        # azure-functions-maven-plugin's `package` goal stages the jar under
+        # target/azure-functions/<functionAppName>/, and `deploy` later looks for it under
+        # target/azure-functions/<the -DfunctionAppName it was given>/ — if the two don't match
+        # (e.g. package used pom.xml's default while deploy used the real per-env name), `deploy`
+        # fails with "Failed to find function artifact ... please re-package the project".
+        run: |
+          mvn -B -DskipTests -DfunctionAppName=${{ needs.setup.outputs.function_app_name }} clean package
       - uses: actions/upload-artifact@v4
         with:
           name: function-app-package
