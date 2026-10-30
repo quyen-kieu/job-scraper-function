@@ -130,8 +130,10 @@ var cosmosKeySecretUri = '@Microsoft.KeyVault(SecretUri=${vaultUri}secrets/azure
 var resendApiKeySecretUri = '@Microsoft.KeyVault(SecretUri=${vaultUri}secrets/resend-api-key/)'
 
 var appSettings = [
-  { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'java' }
-  { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
+  // NOTE: FUNCTIONS_WORKER_RUNTIME and FUNCTIONS_EXTENSION_VERSION are deliberately NOT set here.
+  // Flex Consumption plans reject both app settings outright (BadRequest: "... for Flex
+  // Consumption sites is invalid. Please remove or rename it before retrying.") — the runtime
+  // and version are instead declared once via functionAppConfig.runtime (see function-app.bicep).
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: monitoring.outputs.connectionString }
   { name: 'JOB_SCRAPER_DAILY_CRON', value: jobScraperDailyCron }
   { name: 'JOB_SCRAPER_USER_AGENT', value: 'job-scraper/0.1' }

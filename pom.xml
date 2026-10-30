@@ -148,12 +148,12 @@
                         <os>linux</os>
                         <javaVersion>21</javaVersion>
                     </runtime>
-                    <appSettings>
-                        <property>
-                            <name>FUNCTIONS_EXTENSION_VERSION</name>
-                            <value>~4</value>
-                        </property>
-                    </appSettings>
+                    <!-- NOTE: no <appSettings> here. This previously set FUNCTIONS_EXTENSION_VERSION,
+                         but Flex Consumption plans (see infra/azure/modules/function-app.bicep)
+                         reject that app setting outright (BadRequest: "... for Flex Consumption
+                         sites is invalid. Please remove or rename it before retrying."), the same
+                         way the ARM template does — the runtime/version are declared once via
+                         Bicep's functionAppConfig.runtime instead. -->
                 </configuration>
                 <executions>
                     <execution>
