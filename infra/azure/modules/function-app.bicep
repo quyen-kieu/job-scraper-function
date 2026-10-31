@@ -76,7 +76,16 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         version: '21'
       }
       scaleAndConcurrency: {
-        instanceMemoryMB: 512
+        // 512 MB (the Flex Consumption default) is too little for this app: the packaged
+        // artifact is a ~70MB Spring Boot fat-jar (Cosmos SDK + Kafka clients + Spring Boot
+        // itself), and deploying/starting it in a 512MB container reliably OOM-crashed the
+        // instance mid-deploy. That crash is what caused every `az functionapp deploy` to fail
+        // with a consistent, immediate "502 - invalid response ... gateway" from Kudu (confirmed
+        // by: `/api/deployments` staying empty even after a "successful" POST, and the identical
+        // 502 reproducing when POSTing directly to Kudu's /api/zipdeploy with a valid AAD token,
+        // bypassing the CLI entirely). Bumping to 2048MB (manually verified live against this
+        // exact app with `az functionapp scale config set --instance-memory 2048`) is the fix.
+        instanceMemoryMB: 2048
         maximumInstanceCount: 4
       }
     }
