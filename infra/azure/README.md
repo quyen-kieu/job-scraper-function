@@ -75,7 +75,7 @@ rejects. The fix: `keyvault.bicep` never takes the Function App's principal id a
   properties matching these Bicep defaults today, but they aren't read from the same source — keep
   them in sync manually if either changes. In practice this plugin's `deploy` goal is no longer used
   by CI (see `docs/STAGE8_PLAN.md` — it doesn't reliably support Flex Consumption); `deploy-app`
-  deploys with a plain `az functionapp deploy` zip upload instead, overriding only
+  deploys with a plain `az functionapp deployment source config-zip` zip upload instead, overriding only
   `functionAppName`/`appServicePlanName`/`azureRegion` where still relevant for local/manual use of
   the plugin's `package` goal.
 

@@ -556,8 +556,8 @@ jobs:
       # `linuxFxVersion` internally from the <runtime> block, which Flex Consumption rejects
       # outright (BadRequest: "... for Flex Consumption sites is invalid."), the exact same way
       # Bicep did before that property was removed from function-app.bicep. Rather than keep
-      # chasing the plugin's Flex Consumption gaps, deploy with a plain `az functionapp deploy`
-      # zip upload instead: it only uploads code (the jar/host.json/lib staged by `mvn package`
+      # chasing the plugin's Flex Consumption gaps, deploy with a plain Azure CLI zip upload
+      # instead (config-zip, see below): it only uploads code (the jar/host.json/lib staged by `mvn package`
       # in the `package` job), never touches siteConfig/runtime properties, and therefore cannot
       # hit this class of bug at all — those properties are owned exclusively by Bicep.
       - name: Zip the packaged Function App for deployment
@@ -569,38 +569,31 @@ jobs:
           rm -f local.settings.json
           zip -r ../function-app-package.zip . -x '*.DS_Store'
 
-      # Root cause of the repeated, non-transient "502 - invalid response ... gateway" from Kudu:
-      # scaleAndConcurrency.instanceMemoryMB was 512MB (Flex Consumption's default), which is too
-      # little for this app's ~70MB Spring Boot fat-jar (Cosmos SDK + Kafka clients + Spring Boot
-      # itself) — the deploy container OOM-crashed while processing the upload, which Azure's
-      # front-end gateway surfaces as a 502 (confirmed directly: Kudu's /api/deployments stayed
-      # empty even after a "successful" POST, and the identical 502 reproduced when POSTing the
-      # zip straight to Kudu's /api/zipdeploy with a plain AAD bearer token, bypassing the CLI and
-      # any warm-up/retry logic entirely). Fixed permanently in function-app.bicep by raising
-      # instanceMemoryMB to 2048. --async true is still used below so the CLI doesn't hold a
-      # long-lived synchronous connection open across the whole upload+restart cycle, and the
-      # short retry loop remains as defense-in-depth for ordinary transient blips, not as a
-      # workaround for the (now fixed) memory crash.
-      - name: az functionapp deploy (async zip deploy)
+      # Use `az functionapp deployment source config-zip`, NOT `az functionapp deploy`.
+      # Root cause of the persistent "502 - invalid response ... gateway" errors (verified against
+      # the live app): `az functionapp deploy` (azure-cli 2.84.0) uploads the zip with
+      # Content-Type application/octet-stream, which Flex Consumption's deployment endpoint
+      # rejects with 415 Unsupported Media Type. With a tiny zip the 415 is returned as-is; with
+      # this ~70MB package the server rejects mid-upload and the front-end gateway reports a 502.
+      # Retries, warm-up, and instance memory had no effect. config-zip uploads as
+      # application/zip, then waits for trigger sync and checks app health itself — verified to
+      # deploy this exact package successfully.
+      - name: Deploy package (config-zip)
         run: |
           set -euo pipefail
-          waits=(60 120 180)
-          for i in "${!waits[@]}"; do
-            attempt=$((i + 1))
-            if az functionapp deploy \
+          for attempt in 1 2 3; do
+            if az functionapp deployment source config-zip \
                 --resource-group java-functions-group \
                 --name ${{ needs.setup.outputs.function_app_name }} \
-                --src-path target/azure-functions/function-app-package.zip \
-                --type zip \
-                --async true \
-                --timeout 900000; then
+                --src target/azure-functions/function-app-package.zip; then
               exit 0
             fi
-            wait_s=${waits[$i]}
-            echo "::warning::az functionapp deploy attempt ${attempt} failed; waiting ${wait_s}s before retrying."
-            sleep "${wait_s}"
+            if [ "${attempt}" -lt 3 ]; then
+              echo "::warning::config-zip attempt ${attempt} failed; retrying in 60s."
+              sleep 60
+            fi
           done
-          echo "::error::az functionapp deploy failed after repeated attempts."
+          echo "::error::config-zip deployment failed after 3 attempts."
           exit 1
 
   # README item 12.
