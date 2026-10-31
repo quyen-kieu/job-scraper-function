@@ -1012,7 +1012,9 @@ validate
   default. `deploy-app` overrides this per environment with
   `-DfunctionAppName=job-scraper-function-<env>` on the Maven command line (a plain
   `<properties>` entry is overridable via `-D`) rather than baking an environment into source.
-- **`deploy-app` uses a plain `az functionapp deploy` zip upload**, not the
+- **`deploy-app` uses a plain `az functionapp deployment source config-zip` zip upload** (not
+  `az functionapp deploy`, which uploads as `application/octet-stream` and is rejected by Flex
+  Consumption with 415, surfacing as a 502 for large packages), not the
   `azure-functions-maven-plugin`'s `deploy` goal. That plugin goal was tried first (a
   provision-and-deploy upsert, reusing the existing Bicep-provisioned app) but proved incompatible
   with Flex Consumption: even with `appServicePlanName`/`region` aligned to Bicep, the plugin's
