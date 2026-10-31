@@ -57,9 +57,9 @@ jobs:
       - id: env
         run: |
           if [ "${{ inputs.target_environment }}" = "production" ]; then
-            echo "function_app_name=job-scraper-function-prod" >> "$GITHUB_OUTPUT"
+            echo "function_app_name=jobscraper-prod-cus" >> "$GITHUB_OUTPUT"
           else
-            echo "function_app_name=job-scraper-function-dev" >> "$GITHUB_OUTPUT"
+            echo "function_app_name=jobscraper-dev-cus" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Trigger on-demand scrape for ${{ inputs.company_id }}
@@ -73,14 +73,19 @@ jobs:
             --function-name OnDemandScrapeCommandProducer \
             --query "default" -o tsv)
 
-          HOSTNAME=$(az functionapp show \
+          # Flex Consumption: top-level defaultHostName is null; use properties.defaultHostName.
+          FUNC_HOST=$(az functionapp show \
             --resource-group java-functions-group \
             --name "${FUNCTION_APP_NAME}" \
-            --query "defaultHostName" -o tsv)
+            --query "properties.defaultHostName || defaultHostName" -o tsv)
+          if [ -z "${FUNC_HOST}" ]; then
+            echo "::error::Could not resolve default hostname for ${FUNCTION_APP_NAME}"
+            exit 1
+          fi
 
           echo "Triggering on-demand scrape for company '${{ inputs.company_id }}' against ${FUNCTION_APP_NAME}..."
-          HTTP_STATUS=$(curl -s -o /tmp/replay-response.json -w "%{http_code}" -X POST \
-            "https://${HOSTNAME}/api/scrape/trigger?companyId=${{ inputs.company_id }}&code=${FUNCTION_KEY}")
+          HTTP_STATUS=$(curl -sS -o /tmp/replay-response.json -w "%{http_code}" -X POST \
+            "https://${FUNC_HOST}/api/scrape/trigger?companyId=${{ inputs.company_id }}&code=${FUNCTION_KEY}")
 
           echo "Response (HTTP ${HTTP_STATUS}):"
           cat /tmp/replay-response.json

@@ -45,15 +45,53 @@ if [[ -z "${FUNCTION_KEY}" || "${FUNCTION_KEY}" == "null" ]]; then
   exit 1
 fi
 
-HOSTNAME=$(az functionapp show \
+# For Flex Consumption apps, `az functionapp show` returns the top-level `defaultHostName` as
+# null; the value only lives under `properties.defaultHostName` (verified against the live app).
+# An empty host made curl fail with exit code 6 ("could not resolve host") and, under `set -e`,
+# abort the script silently. Prefer the properties path, fall back to the top-level field.
+FUNC_HOST=$(az functionapp show \
   --resource-group "${RESOURCE_GROUP}" \
   --name "${FUNCTION_APP_NAME}" \
-  --query "defaultHostName" -o tsv)
+  --query "properties.defaultHostName || defaultHostName" -o tsv)
 
-ENDPOINT="https://${HOSTNAME}/api/scrape/trigger?companyId=${SMOKE_TEST_COMPANY_ID}&code=${FUNCTION_KEY}"
+if [[ -z "${FUNC_HOST}" || "${FUNC_HOST}" == "null" ]]; then
+  echo "ERROR: could not resolve default hostname for Function App '${FUNCTION_APP_NAME}'" >&2
+  exit 1
+fi
+echo "-- Function App host: ${FUNC_HOST}"
+
+# Pre-flight: the Functions host must be Running, otherwise no functions are registered and the
+# trigger returns 404. Surface the host's own error (e.g. missing Kafka SASL credentials).
+MASTER_KEY=$(az functionapp keys list \
+  --resource-group "${RESOURCE_GROUP}" \
+  --name "${FUNCTION_APP_NAME}" \
+  --query "masterKey" -o tsv)
+HOST_STATE=""
+for _ in 1 2 3 4 5 6; do
+  HOST_STATUS_JSON=$(curl -sS --max-time 120 "https://${FUNC_HOST}/admin/host/status?code=${MASTER_KEY}" || echo "{}")
+  HOST_STATE=$(echo "${HOST_STATUS_JSON}" | jq -r '.state // empty' 2>/dev/null || true)
+  [[ "${HOST_STATE}" == "Running" ]] && break
+  echo "   host state='${HOST_STATE:-unknown}', retrying in 20s..."
+  sleep 20
+done
+if [[ "${HOST_STATE}" != "Running" ]]; then
+  echo "ERROR: Functions host is not Running (state='${HOST_STATE:-unknown}'). Host errors:" >&2
+  echo "${HOST_STATUS_JSON}" | jq -r '.errors // [] | .[]' >&2 2>/dev/null || true
+  exit 1
+fi
+echo "-- Functions host is Running."
+
+ENDPOINT="https://${FUNC_HOST}/api/scrape/trigger?companyId=${SMOKE_TEST_COMPANY_ID}&code=${FUNCTION_KEY}"
 
 echo "-- Triggering on-demand scrape via POST /api/scrape/trigger?companyId=${SMOKE_TEST_COMPANY_ID} ..."
-HTTP_STATUS=$(curl -s -o /tmp/smoke-test-response.json -w "%{http_code}" -X POST "${ENDPOINT}")
+CURL_EXIT=0
+HTTP_STATUS=$(curl -sS --retry 3 --retry-delay 10 --max-time 120 \
+  -o /tmp/smoke-test-response.json -w "%{http_code}" -X POST "${ENDPOINT}") || CURL_EXIT=$?
+
+if [[ "${CURL_EXIT}" -ne 0 ]]; then
+  echo "ERROR: curl failed with exit code ${CURL_EXIT} calling https://${FUNC_HOST}/api/scrape/trigger" >&2
+  exit 1
+fi
 
 if [[ "${HTTP_STATUS}" != "200" ]]; then
   echo "ERROR: on-demand trigger returned HTTP ${HTTP_STATUS}. Response body:" >&2
