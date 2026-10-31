@@ -188,7 +188,33 @@ module functionApp 'modules/function-app.bicep' = {
     planName: planName
     location: location
     storageAccountName: storage.outputs.storageAccountName
+    deploymentContainerName: storage.outputs.deploymentContainerName
     appSettings: appSettings
+  }
+}
+
+// Built-in "Storage Blob Data Owner" role definition id. Flex Consumption's deployment storage
+// (functionAppConfig.deployment.storage, configured with SystemAssignedIdentity auth in
+// function-app.bicep) requires the Function App's managed identity to be able to read/write the
+// deployment package blob in storage.outputs.deploymentContainerName — without this, every
+// `az functionapp deploy` fails with a consistent "502 ... invalid response ... gateway" from the
+// SCM/Kudu site, since the platform can authenticate neither to read nor write the package blob.
+var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+
+resource existingStorageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
+  name: storageAccountName
+  dependsOn: [
+    storage
+  ]
+}
+
+resource functionAppStorageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(existingStorageAccount.id, functionAppName, storageBlobDataOwnerRoleId)
+  scope: existingStorageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwnerRoleId)
+    principalId: functionApp.outputs.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

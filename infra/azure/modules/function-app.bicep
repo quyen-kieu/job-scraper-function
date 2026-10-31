@@ -10,6 +10,9 @@ param location string
 @description('Name of the storage account backing AzureWebJobsStorage (the same account created by modules/storage.bicep).')
 param storageAccountName string
 
+@description('Blob container name Flex Consumption uses to store the deployed Function App package (must already exist — created by modules/storage.bicep).')
+param deploymentContainerName string
+
 @description('Full list of application settings (name/value pairs). Secret values are expected to already be Key Vault reference strings, e.g. @Microsoft.KeyVault(SecretUri=...).')
 param appSettings array
 
@@ -29,8 +32,6 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
     reserved: true
   }
 }
-
-var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccountExisting.name};AccountKey=${listKeys(storageAccountExisting.id, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
 
 resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName
@@ -53,11 +54,20 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     functionAppConfig: {
       deployment: {
         storage: {
+          // NOTE: this `value` must be the deployment *blob container URL*, not a storage
+          // account connection string. Setting a connection string here (the original, buggy
+          // config) silently broke every `az functionapp deploy` call with a consistent,
+          // non-transient "502 - Web server received an invalid response while acting as a
+          // gateway" from the SCM/Kudu site — the platform's deployment pipeline couldn't
+          // resolve where to put the package. Using SystemAssignedIdentity auth here (paired
+          // with the Storage Blob Data Owner role assignment granted to this app's identity in
+          // main.bicep) also avoids any dependency on Key Vault reference resolution timing for
+          // a connection-string app setting, which is both simpler and more secure than
+          // StorageAccountConnectionString auth would have been.
           type: 'BlobContainer'
-          value: storageConnectionString
+          value: 'https://${storageAccountExisting.name}.blob.${environment().suffixes.storage}/${deploymentContainerName}'
           authentication: {
-            type: 'StorageAccountConnectionString'
-            storageAccountConnectionStringName: 'AzureWebJobsStorage'
+            type: 'SystemAssignedIdentity'
           }
         }
       }
