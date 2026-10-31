@@ -564,6 +564,20 @@ jobs:
           az keyvault secret set --vault-name "${KV_NAME}" --name kafka-password --value "${KAFKA_PASSWORD_VALUE}" --output none
           az keyvault secret set --vault-name "${KV_NAME}" --name resend-api-key --value "${RESEND_API_KEY_VALUE}" --output none
 
+      # App Service caches resolved Key Vault references (re-fetched only every ~24h or on a
+      # configuration change). A code deploy is NOT a config change, so without this the host
+      # keeps the stale/empty values it resolved before the sync above and stays in Error state
+      # ("Confluent.Kafka: sasl.username and sasl.password must be set."). Touching an app
+      # setting forces re-resolution of all Key Vault references and restarts the host.
+      - name: Force Key Vault reference refresh
+        run: |
+          set -euo pipefail
+          az functionapp config appsettings set \
+            --resource-group java-functions-group \
+            --name ${{ needs.setup.outputs.function_app_name }} \
+            --settings "KEYVAULT_SECRETS_SYNCED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output none
+
       # Scope decision REVISED (supersedes docs/STAGE8_PLAN.md §4.2): the azure-functions-maven-
       # plugin's `deploy` goal does not reliably support Flex Consumption apps as of plugin
       # 1.24.0 — even with appServicePlanName/region correctly aligned to Bicep (see the prior
