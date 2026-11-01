@@ -7,17 +7,14 @@ param location string
 @description('Azure AD tenant ID.')
 param tenantId string
 
-@description('Secrets to create. Real values are set out-of-band (manual `az keyvault secret set`, or a future Stage 8 automated step) — placeholders here only make the secret resource and its name reviewable.')
+@description('Bicep-derived secrets to create (storage connection string, Cosmos key). Externally owned secrets (kafka-username, kafka-password, resend-api-key) are NOT managed here — deploy.yml writes them, so a Bicep apply never overwrites them.')
 @secure()
 param secrets object
 
 var secretNames = [
   'AzureWebJobsStorage'
-  'kafka-username'
-  'kafka-password'
   'azure-storage-connection-string'
   'azure-cosmos-key'
-  'resend-api-key'
 ]
 
 // NOTE: this module intentionally does NOT accept the Function App's managed identity principal

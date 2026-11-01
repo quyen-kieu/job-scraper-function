@@ -28,28 +28,22 @@ param tenantId string = subscription().tenantId
 @description('Object ID of the GitHub Actions OIDC service principal (deploy.yml\'s azure/login identity). Granted Key Vault Secrets Officer so deploy-app can write real secret values post-deployment. Not a secret itself (an object ID has no standalone access), so it is a plain, non-@secure() parameter sourced from a GitHub Variable.')
 param cicdServicePrincipalObjectId string = ''
 
-@description('Kafka bootstrap servers (Confluent Cloud), e.g. pkc-xxxxx.region.provider.confluent.cloud:9092.')
+@description('Kafka bootstrap servers (Confluent Cloud), e.g. pkc-xxxxx.region.provider.confluent.cloud:9092. Supplied at deploy time from the KAFKA_BOOTSTRAP_SERVERS GitHub secret, never committed.')
 param kafkaBootstrapServers string
 
-@description('Kafka SASL username placeholder. Real value is set directly in Key Vault out-of-band via `az keyvault secret set` (empty default per linter guidance for secure parameters).')
-@secure()
-param kafkaUsernamePlaceholder string = ''
+// NOTE: kafka-username, kafka-password and resend-api-key are deliberately NOT Bicep parameters or
+// Bicep-managed secrets. They are owned exclusively by deploy.yml's "Sync real secret values into
+// Key Vault" step. Previously Bicep declared them with empty placeholder values, which silently
+// overwrote the real secrets with "" on every `az deployment group create`, leaving the Functions
+// host in Error state ("Confluent.Kafka: sasl.username and sasl.password must be set.").
 
-@description('Kafka SASL password placeholder; see kafkaUsernamePlaceholder.')
-@secure()
-param kafkaPasswordPlaceholder string = ''
-
-@description('Resend API key placeholder; see kafkaUsernamePlaceholder.')
-@secure()
-param resendApiKeyPlaceholder string = ''
-
-@description('Resend "from" email address, e.g. send@example.com.')
+@description('Resend "from" email address, e.g. send@example.com. Supplied at deploy time from the RESEND_FROM_EMAIL GitHub secret, never committed.')
 param resendFromEmail string
 
 @description('Resend "from" display name.')
 param resendFromName string = 'Job Scraper'
 
-@description('Resend "to" email address for the daily summary.')
+@description('Resend "to" email address for the daily summary. Supplied at deploy time from the RESEND_TO_EMAIL GitHub secret, never committed.')
 param resendToEmail string
 
 @description('Subject prefix for the daily summary email.')
@@ -97,9 +91,11 @@ module monitoring 'modules/monitoring.bicep' = {
   }
 }
 
-// Key Vault secret placeholders. Real production values are set with `az keyvault secret set`
-// (or a future Stage 8 automated step) and are never derived from Bicep parameters in practice —
-// these placeholders only exist so the secret *resources* (name + access policy) are reviewable.
+// Key Vault + the secrets Bicep can derive itself (storage connection string, Cosmos key).
+// kafka-username / kafka-password / resend-api-key are intentionally absent: they are written
+// only by deploy.yml's deploy-app job (from GitHub secrets) so a Bicep apply can never clobber
+// them. The app settings below still reference them by URI; on a brand-new environment those
+// references stay unresolved until the first deploy-app run populates the vault.
 //
 // NOTE: this module deliberately does not depend on the functionApp module (see keyvault.bicep
 // comment) — the Key Vault Secrets User role assignment is granted below, after both modules
@@ -113,11 +109,8 @@ module keyVault 'modules/keyvault.bicep' = {
     tenantId: tenantId
     secrets: {
       AzureWebJobsStorage: storage.outputs.connectionString
-      'kafka-username': kafkaUsernamePlaceholder
-      'kafka-password': kafkaPasswordPlaceholder
       'azure-storage-connection-string': storage.outputs.connectionString
       'azure-cosmos-key': cosmos.outputs.primaryKey
-      'resend-api-key': resendApiKeyPlaceholder
     }
   }
 }

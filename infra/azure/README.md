@@ -18,10 +18,13 @@ az bicep build --file infra/azure/main.bicep
 az deployment group what-if `
   --resource-group java-functions-group `
   --template-file infra/azure/main.bicep `
-  --parameters infra/azure/parameters.dev.json
+  --parameters infra/azure/parameters.dev.json `
+  --parameters kafkaBootstrapServers="<pkc-xxxxx...:9092>" resendFromEmail="<sender>" resendToEmail="<recipient>"
 ```
 
 ## Deploy (manual, until Stage 8 automates this behind an approval gate)
+
+> The Kafka bootstrap server and Resend email addresses are never committed to `parameters.*.json`; pass them with `--parameters` as shown (CI reads them from GitHub secrets).
 
 **Stage 8 now automates this** via `.github/workflows/deploy.yml`'s `apply-azure` job (gated
 behind the `production` GitHub Environment's required reviewer). The manual commands below remain
@@ -31,16 +34,18 @@ useful for local/one-off testing against `dev`, or for diagnosing a failed pipel
 az deployment group create `
   --resource-group java-functions-group `
   --template-file infra/azure/main.bicep `
-  --parameters infra/azure/parameters.dev.json
+  --parameters infra/azure/parameters.dev.json `
+  --parameters kafkaBootstrapServers="<pkc-xxxxx...:9092>" resendFromEmail="<sender>" resendToEmail="<recipient>"
 ```
 
 ## Setting real secret values
 
-`main.bicep` creates Key Vault secret **resources** with empty placeholder values (empty string,
-per Bicep linter guidance for `@secure()` parameter defaults) for `kafka-username`,
-`kafka-password`, and `resend-api-key` — the `azure-storage-connection-string` and
-`azure-cosmos-key` secrets are populated automatically from the Storage/Cosmos modules' own
-outputs. Set the placeholder-backed secrets after the first deployment:
+`main.bicep` only creates the Key Vault secrets it can derive itself (`AzureWebJobsStorage`,
+`azure-storage-connection-string`, `azure-cosmos-key`). It deliberately does **not** declare
+`kafka-username`, `kafka-password`, or `resend-api-key`: earlier versions created them with empty
+placeholder values, so every `az deployment group create` silently overwrote the real secrets with
+"" and broke the Kafka triggers. In CI, `deploy.yml`'s deploy-app job writes them from GitHub
+secrets. For a manual deployment, set them yourself after the first `create`:
 
 ```powershell
 az keyvault secret set --vault-name <keyVaultName-output> --name kafka-username --value "<api-key>"

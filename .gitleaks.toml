@@ -1,0 +1,25 @@
+# gitleaks configuration - credential scanning over the FULL git history.
+# Used by .github/workflows/secret-scan.yml. Run locally with:
+#   gitleaks git . --config .gitleaks.toml --log-opts="--all" --redact --verbose
+#
+# Deliberately NO path allowlists: placeholders such as "<api-key>" do not match gitleaks'
+# credential rules, so allowlisting sample/example files would only create a blind spot where a
+# real secret could be pasted unnoticed.
+
+title = "job-scraper-function credential scan"
+
+[extend]
+useDefault = true
+
+# Narrow, line-anchored allowlist for Azure *built-in* role definition IDs in Bicep (e.g.
+# `var keyVaultSecretsUserRoleId = '4633458b-...'`). These GUIDs are published by Microsoft,
+# identical in every tenant, and grant nothing on their own; gitleaks' generic-api-key rule flags
+# them only because of the "...Id = '<high-entropy>'" shape. Only a variable whose name ends in
+# "RoleId" with a bare GUID value is exempted - any other key/secret shape is still reported.
+[allowlist]
+description = "Azure built-in role definition IDs (public, non-secret)"
+regexTarget = "line"
+regexes = [
+  '''^\s*var\s+[A-Za-z0-9]+RoleId\s*=\s*'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'\s*$''',
+]
+

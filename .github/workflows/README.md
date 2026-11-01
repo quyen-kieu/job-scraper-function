@@ -8,11 +8,10 @@ Confluent-related still needs real values from the Confluent Cloud console — s
 - **`dev`** — created, no protection rules (applies automatically for fast iteration).
 - **`production`** — created with a `main`-branch-only deployment policy (native GitHub
   enforcement, layered on top of the workflow's own `should_apply` branch check).
-  **⚠️ Known limitation:** GitHub's "required reviewers" protection rule — the mechanism this
-  project intended as its human approval gate (README Stage 8 item 6) — **requires either a
-  public repository or a paid GitHub plan** for private repos. This repo is private on what
-  appears to be the free plan, so `production`'s approval gate today is the branch restriction
-  only, **not** a human-in-the-loop review. If a paid plan is later added, re-run:
+  **Repository visibility: PUBLIC.** Required-reviewer protection rules are available for public
+  repositories on every plan, so configure a human approval gate for `production`. Note also that
+  Actions logs are public - never echo secret or identifying values, and keep such values in
+  GitHub *secrets* (auto-masked), not Variables. Configure the reviewer gate with:
   ```powershell
   gh api --method PUT repos/quyen-kieu/job-scraper-function/environments/production `
     -f "reviewers[][type]=User" -f "reviewers[][id]=<your-numeric-github-user-id>"
@@ -22,9 +21,9 @@ Confluent-related still needs real values from the Confluent Cloud console — s
 
 | Name | Kind | Value source |
 |---|---|---|
-| `AZURE_CLIENT_ID` | Secret | New app registration `github-actions-job-scraper-function` (appId `<appId>`), OIDC federated credentials added for `ref:refs/heads/main`, `environment:dev`, `environment:production`, and `pull_request` subjects — no client secret stored, ever. **Important:** the `sub` claim GitHub actually presents includes numeric owner/repo IDs, e.g. `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/main`, not just `repo:quyen-kieu/job-scraper-function:ref:refs/heads/main` — federated credentials must match this exact format (confirmed by a real failed login: `AADSTS700213: No matching federated identity record found`) or `azure/login` fails. Get the exact values with `gh api repos/<owner>/<repo> --jq "{repoId: .id, ownerId: .owner.id}"`. |
+| `AZURE_CLIENT_ID` | Secret | App registration used for GitHub OIDC (appId intentionally not recorded here; see Entra ID > App registrations). Federated credentials exist for `ref:refs/heads/main`, `environment:dev`, `environment:production`, and `pull_request` subjects - no client secret stored, ever. **Important:** the `sub` claim GitHub presents includes numeric owner/repo IDs, e.g. `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/main`, not just `repo:<owner>/<repo>:ref:refs/heads/main` - federated credentials must match this exact format or `azure/login` fails with `AADSTS700213: No matching federated identity record found`. Get the exact values with `gh api repos/<owner>/<repo> --jq "{repoId: .id, ownerId: .owner.id}"`. |
 | `AZURE_TENANT_ID` | Secret | This subscription's tenant. |
-| `AZURE_SUBSCRIPTION_ID` | Secret | The target subscription used for local `az` login. |
+| `AZURE_SUBSCRIPTION_ID` | Secret | The target Azure subscription ID. |
 | `AZURE_CICD_SP_OBJECT_ID` | Variable | The above app's service principal object ID — granted `Contributor` on the `java-functions-group` resource group (for Bicep) and `Storage Blob Data Contributor` on the Terraform state storage account. Also passed into `main.bicep` so it's granted `Key Vault Secrets Officer` on the deployed vault (needed for `deploy-app`'s `az keyvault secret set` calls). |
 
 **Before running `plan-azure` or `apply-azure`, ensure the subscription has the required resource providers registered**:
@@ -60,6 +59,9 @@ it) is sufficient since `roleAssignments/write` is inherited down to child resou
 | `TF_BACKEND_CONTAINER` | Variable | `confluent`. |
 | `KAFKA_CLIENT_API_KEY` / `KAFKA_CLIENT_API_SECRET` | Secrets | Reused directly from the already-working `local.settings.json` (the same cluster-scoped credential proven during Stage 6 manual end-to-end testing). |
 | `RESEND_API_KEY` | Secret | Reused directly from `local.settings.json` (the same key that sent the confirmed Stage 6 test email). |
+| `KAFKA_BOOTSTRAP_SERVERS` | Secret (per environment) | Confluent bootstrap server (`pkc-xxxxx.<region>.azure.confluent.cloud:9092`). Passed to Bicep at deploy time; deliberately a *secret*, not a Variable or committed parameter, so it is masked in this public repo's Actions logs. |
+| `RESEND_FROM_EMAIL` | Secret (per environment) | Verified Resend sender address. Same reasoning as above. |
+| `RESEND_TO_EMAIL` | Secret (per environment) | Daily-summary recipient address. Same reasoning as above. Also set repo-level copies (or leave unset) for `infra-validate.yml`, which falls back to placeholders. |
  
 ## 2b. Still required — Confluent side (not something an agent can obtain on your behalf)
 
@@ -82,30 +84,6 @@ gh variable set CONFLUENT_ENVIRONMENT_ID --repo quyen-kieu/job-scraper-function 
 gh variable set CONFLUENT_CLUSTER_ID --repo quyen-kieu/job-scraper-function --body "lkc-xxxxxx"
 ```
 
-````
-This is the description of what the code block changes:
-<changeDescription>
-Clarify that Terraform topic/ACL creation requires the cluster-scoped Kafka API key/secret, while the org-level Confluent Cloud key is only used for Confluent provider authentication and environment lookup.
-</changeDescription>
-
-This is the code block that represents the suggested code change:
-````markdown
-| `CONFLUENT_CLOUD_API_KEY` | Secret | Confluent Cloud console → your organization → API keys. Needs **org-admin** scope (topic/ACL/service-account/API-key management) — distinct from the cluster-scoped `KAFKA_CLIENT_API_KEY` already set above, which only has data-plane produce/consume rights. |
-| `CONFLUENT_CLOUD_API_SECRET` | Secret | Paired with the key above. |
-| `KAFKA_CLIENT_API_KEY` | Secret | Confluent Cloud console → your cluster → API keys. **This is the cluster-scoped credential Terraform must use for `confluent_kafka_topic` and `confluent_kafka_acl` management.** |
-| `KAFKA_CLIENT_API_SECRET` | Secret | Paired with the cluster-scoped key above. |
-| `CONFLUENT_ENVIRONMENT_ID` | Variable | Confluent Cloud console → Environments (format `env-xxxxxx`). |
-| `CONFLUENT_CLUSTER_ID` | Variable | Confluent Cloud console → your cluster's settings (format `lkc-xxxxxx`). The existing `shared-kafka-dev-us-central1` cluster referenced throughout the README. |
-
-Once you have these six values, set them with:
-```powershell
-gh secret set CONFLUENT_CLOUD_API_KEY --repo quyen-kieu/job-scraper-function
-gh secret set CONFLUENT_CLOUD_API_SECRET --repo quyen-kieu/job-scraper-function
-gh secret set KAFKA_CLIENT_API_KEY --repo quyen-kieu/job-scraper-function
-gh secret set KAFKA_CLIENT_API_SECRET --repo quyen-kieu/job-scraper-function
-gh variable set CONFLUENT_ENVIRONMENT_ID --repo quyen-kieu/job-scraper-function --body "env-xxxxxx"
-gh variable set CONFLUENT_CLUSTER_ID --repo quyen-kieu/job-scraper-function --body "lkc-xxxxxx"
-```
 (`gh secret set NAME` with no `--body` prompts interactively so the value never appears in shell
 history.)
 
@@ -123,3 +101,19 @@ Open a pull request touching `infra/**` or `src/**` — you should see `validate
 `package`, `plan-azure`, and `plan-confluent` run automatically (read-only, no approval needed).
 `plan-azure` should already succeed today (Azure secrets are set); `plan-confluent` will keep
 failing at `terraform init`/`plan` until §2b's four Confluent values are set.
+
+
+## 5. Secret scanning (defense in depth)
+
+- `secret-scan.yml` runs [gitleaks](https://github.com/gitleaks/gitleaks) over the **full git
+  history** on every push and pull request (config: `.gitleaks.toml` at the repo root). A finding
+  fails the workflow.
+- GitHub-native secret scanning + push protection (free for public repos) blocks known credential
+  formats at `git push` time. Enable/verify with:
+  ```powershell
+  gh api --method PATCH repos/<owner>/<repo> `
+    -f "security_and_analysis[secret_scanning][status]=enabled" `
+    -f "security_and_analysis[secret_scanning_push_protection][status]=enabled"
+  ```
+- If a scanner ever fires on a real credential: **rotate it first**, then clean history. Removing
+  a secret from the latest commit does not un-leak it.

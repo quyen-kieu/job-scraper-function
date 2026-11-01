@@ -10,10 +10,7 @@
     "cosmosPostingsContainer": { "value": "job-postings" },
     "cosmosObservationsContainer": { "value": "job-observations" },
     "cosmosMetricsContainer": { "value": "monthly-metrics" },
-    "kafkaBootstrapServers": { "value": "pkc-xxxxx.region.azure.confluent.cloud:9092" },
-    "resendFromEmail": { "value": "send@example.com" },
     "resendFromName": { "value": "Job Scraper" },
-    "resendToEmail": { "value": "user@example.com" },
     "resendSubjectPrefix": { "value": "Job Scraper Daily Summary" },
     "jobScraperDailyCron": { "value": "0 0 3 * * *" }
   }

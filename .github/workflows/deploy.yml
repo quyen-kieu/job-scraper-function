@@ -196,12 +196,30 @@ jobs:
         run: |
           az group create --name java-functions-group --location centralus --output none
       - name: az deployment group what-if
+        # Environment-specific identifying values (bootstrap server, sender/recipient emails) are
+        # GitHub *secrets*, not committed parameters and not Variables: this repo is public, so its
+        # Actions logs are public, and only secrets are auto-masked (what-if prints app settings).
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          RESEND_TO_EMAIL: ${{ secrets.RESEND_TO_EMAIL }}
+          CICD_SP_OBJECT_ID: ${{ vars.AZURE_CICD_SP_OBJECT_ID }}
         run: |
+          set -euo pipefail
+          for v in KAFKA_BOOTSTRAP_SERVERS RESEND_FROM_EMAIL RESEND_TO_EMAIL; do
+            if [ -z "${!v}" ]; then
+              echo "::error::GitHub secret ${v} is not set for environment '${{ needs.setup.outputs.gh_environment }}'."
+              exit 1
+            fi
+          done
           az deployment group what-if \
             --resource-group java-functions-group \
             --template-file infra/azure/main.bicep \
             --parameters infra/azure/parameters.${{ needs.setup.outputs.bicep_env }}.json \
-            --parameters cicdServicePrincipalObjectId=${{ vars.AZURE_CICD_SP_OBJECT_ID }}
+            --parameters cicdServicePrincipalObjectId="${CICD_SP_OBJECT_ID}" \
+                         kafkaBootstrapServers="${KAFKA_BOOTSTRAP_SERVERS}" \
+                         resendFromEmail="${RESEND_FROM_EMAIL}" \
+                         resendToEmail="${RESEND_TO_EMAIL}"
 
   # README item 4. Uses the REAL remote backend (unlike infra-validate.yml's stateless preview),
   # since this plan must be apply-able by apply-confluent later in the same pipeline.
@@ -462,12 +480,29 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: az deployment group create
+        # See plan-azure's what-if step for why these are secrets rather than committed values.
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          RESEND_TO_EMAIL: ${{ secrets.RESEND_TO_EMAIL }}
+          CICD_SP_OBJECT_ID: ${{ vars.AZURE_CICD_SP_OBJECT_ID }}
         run: |
+          set -euo pipefail
+          for v in KAFKA_BOOTSTRAP_SERVERS RESEND_FROM_EMAIL RESEND_TO_EMAIL; do
+            if [ -z "${!v}" ]; then
+              echo "::error::GitHub secret ${v} is not set for environment '${{ needs.setup.outputs.gh_environment }}'."
+              exit 1
+            fi
+          done
           az deployment group create \
             --resource-group java-functions-group \
             --template-file infra/azure/main.bicep \
             --parameters infra/azure/parameters.${{ needs.setup.outputs.bicep_env }}.json \
-            --parameters cicdServicePrincipalObjectId=${{ vars.AZURE_CICD_SP_OBJECT_ID }}
+            --parameters cicdServicePrincipalObjectId="${CICD_SP_OBJECT_ID}" \
+                         kafkaBootstrapServers="${KAFKA_BOOTSTRAP_SERVERS}" \
+                         resendFromEmail="${RESEND_FROM_EMAIL}" \
+                         resendToEmail="${RESEND_TO_EMAIL}" \
+            --output none
 
   # README item 8. Reuses the exact plan approved above (no re-plan/re-approve drift).
   apply-confluent:

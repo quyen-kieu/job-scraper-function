@@ -62,10 +62,19 @@ jobs:
             echo "function_app_name=jobscraper-dev-cus" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Trigger on-demand scrape for ${{ inputs.company_id }}
+      - name: Trigger on-demand scrape
+        # The free-text input is passed via env (never `${{ }}`-interpolated into the script, which
+        # would allow shell injection) and validated against the same allowlist the Function uses
+        # (OnDemandScrapeCommandProducerFunction.COMPANY_ID_PATTERN).
+        env:
+          COMPANY_ID: ${{ inputs.company_id }}
+          FUNCTION_APP_NAME: ${{ steps.env.outputs.function_app_name }}
         run: |
           set -euo pipefail
-          FUNCTION_APP_NAME="${{ steps.env.outputs.function_app_name }}"
+          if ! [[ "${COMPANY_ID}" =~ ^[a-z0-9][a-z0-9-]{0,49}$ ]]; then
+            echo "::error::company_id must match ^[a-z0-9][a-z0-9-]{0,49}\$ (lowercase letters, digits, hyphens)."
+            exit 1
+          fi
 
           FUNCTION_KEY=$(az functionapp function keys list \
             --resource-group java-functions-group \
@@ -83,9 +92,9 @@ jobs:
             exit 1
           fi
 
-          echo "Triggering on-demand scrape for company '${{ inputs.company_id }}' against ${FUNCTION_APP_NAME}..."
+          echo "Triggering on-demand scrape for company '${COMPANY_ID}' against ${FUNCTION_APP_NAME}..."
           HTTP_STATUS=$(curl -sS -o /tmp/replay-response.json -w "%{http_code}" -X POST \
-            "https://${FUNC_HOST}/api/scrape/trigger?companyId=${{ inputs.company_id }}&code=${FUNCTION_KEY}")
+            "https://${FUNC_HOST}/api/scrape/trigger?companyId=${COMPANY_ID}&code=${FUNCTION_KEY}")
 
           echo "Response (HTTP ${HTTP_STATUS}):"
           cat /tmp/replay-response.json

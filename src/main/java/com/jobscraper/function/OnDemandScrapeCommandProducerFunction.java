@@ -14,6 +14,7 @@ import com.microsoft.azure.functions.annotation.HttpTrigger;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * HTTP-triggered function that publishes {@code job.scrape.commands} on demand, in addition to
@@ -32,6 +33,15 @@ import java.util.Optional;
  */
 @Component
 public class OnDemandScrapeCommandProducerFunction {
+
+    /**
+     * Allowed shape for a caller-supplied {@code companyId}: lowercase letters, digits and hyphens,
+     * 1-50 chars, starting with a letter or digit (matches every configured id, e.g. {@code mckesson}).
+     * Anything else is rejected <em>before</em> it reaches logs, Kafka, or the response body, which
+     * prevents log forging (CR/LF injection into Application Insights traces) and reflecting
+     * attacker-controlled content back to the caller.
+     */
+    static final Pattern COMPANY_ID_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9-]{0,49}$");
 
     private final DailyScrapeCommandProducer commandProducer;
     private final ObjectMapper objectMapper;
@@ -64,6 +74,17 @@ public class OnDemandScrapeCommandProducerFunction {
                         .build();
             }
 
+            if (!COMPANY_ID_PATTERN.matcher(companyId).matches()) {
+                // Never log or echo the raw value - it is untrusted input of unknown content.
+                context.getLogger().warning("On-demand scrape rejected: malformed companyId (length "
+                        + companyId.length() + ").");
+                return request.createResponseBuilder(HttpStatus.BAD_REQUEST)
+                        .header("Content-Type", "application/json")
+                        .body(errorBody("Invalid companyId: must match " + COMPANY_ID_PATTERN.pattern()))
+                        .build();
+            }
+
+            // From here on companyId is known to be safe to log/echo (validated against the allowlist).
             Optional<String> runId = commandProducer.publishCommand(companyId);
             if (runId.isEmpty()) {
                 context.getLogger().warning("On-demand scrape rejected: unknown or disabled companyId '" + companyId + "'.");

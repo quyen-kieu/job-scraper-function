@@ -121,7 +121,7 @@ Use stable keys to preserve ordering per company or posting. Configure consumers
 |---|---|
 | Cluster name | `shared-kafka-dev-us-central1` |
 | Cloud provider / region | Azure / South Central US |
-| Bootstrap server | `pkc-xxxxx.region.azure.confluent.cloud:9092` |
+| Bootstrap server | `pkc-xxxxx.<region>.azure.confluent.cloud:9092` (real value: `KAFKA_BOOTSTRAP_SERVERS` GitHub secret / local `local.settings.json` â€” never committed) |
 | Security protocol | `SASL_SSL` |
 | SASL mechanism | `PLAIN` |
 
@@ -826,7 +826,7 @@ automated apply/deploy remains Stage 8, which is explicitly not started.
      settings; the 6 secret-bearing ones (`AzureWebJobsStorage`, `KAFKA_USERNAME`,
      `KAFKA_PASSWORD`, `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_COSMOS_KEY`, `RESEND_API_KEY`)
      are Key Vault references, not plain values.
-   - `parameters.dev.json` / `parameters.prod.json` provide per-environment values.
+   - `parameters.dev.json` / `parameters.prod.json` provide per-environment, non-identifying values. The Kafka bootstrap server and Resend sender/recipient emails are deliberately *not* committed â€” `deploy.yml` passes them at deploy time from the `KAFKA_BOOTSTRAP_SERVERS`, `RESEND_FROM_EMAIL`, and `RESEND_TO_EMAIL` GitHub environment secrets. Bicep creates only the Key Vault secrets it can derive itself (storage connection string, Cosmos key); `kafka-username`, `kafka-password`, and `resend-api-key` are written exclusively by `deploy.yml`'s deploy-app job, so an infra apply can never overwrite them with blanks.
 2. ✅ Terraform modules for Confluent resources.
    - `infra/confluent/main.tf` manages the existing `shared-kafka-dev-us-central1` cluster's 5
      primary topics + 5 DLTs (as a `for_each` against the README's own baseline table), 5

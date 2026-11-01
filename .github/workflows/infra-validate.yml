@@ -33,11 +33,21 @@ jobs:
         run: az bicep build --file infra/azure/main.bicep
 
       - name: Preview changes (what-if, read-only)
+        # Identifying values are never committed. Use repo-level secrets when available, otherwise
+        # harmless placeholders (e.g. fork PRs, which never receive secrets) — this job is a
+        # read-only preview, so placeholder values only affect the displayed app-setting diff.
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS || 'pkc-xxxxx.region.provider.confluent.cloud:9092' }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL || 'send@example.com' }}
+          RESEND_TO_EMAIL: ${{ secrets.RESEND_TO_EMAIL || 'user@example.com' }}
         run: |
           az deployment group what-if \
             --resource-group java-functions-group \
             --template-file infra/azure/main.bicep \
-            --parameters infra/azure/parameters.dev.json
+            --parameters infra/azure/parameters.dev.json \
+            --parameters kafkaBootstrapServers="${KAFKA_BOOTSTRAP_SERVERS}" \
+                         resendFromEmail="${RESEND_FROM_EMAIL}" \
+                         resendToEmail="${RESEND_TO_EMAIL}"
 
   terraform-validate:
     name: Validate Terraform (fmt + validate + plan)

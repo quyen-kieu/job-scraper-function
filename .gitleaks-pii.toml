@@ -1,0 +1,37 @@
+# gitleaks configuration - PII (personal email address) scan of the CURRENT working tree only.
+# Used by .github/workflows/secret-scan.yml (`gitleaks dir`, i.e. no git history), so it guards
+# against re-introducing real addresses without failing on history that predates this rule.
+#
+# Real sender/recipient addresses belong in the RESEND_FROM_EMAIL / RESEND_TO_EMAIL GitHub
+# secrets (CI) or the git-ignored local.settings.json (local dev) - never in committed files.
+#
+# Run locally with:
+#   gitleaks dir . --config .gitleaks-pii.toml --redact --verbose
+
+title = "job-scraper-function PII scan"
+
+[[rules]]
+id = "email-address"
+description = "Real email address committed to the repository"
+regex = '''[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}'''
+keywords = ["@"]
+
+  # Criteria below are OR'ed: a finding is ignored if its match is a documented placeholder OR
+  # it lives in generated/binary content not authored in this repo.
+  [rules.allowlist]
+  description = "Placeholder addresses and generated content"
+  regexTarget = "match"
+  regexes = [
+    '''(?i)@(?:[a-z0-9-]+\.)*example\.(?:com|org|net)$''',
+    '''(?i)^send@domain\.com$''',
+    '''(?i)^user@gmail\.com$''',
+    '''(?i)^onboarding@resend\.dev$''',
+    '''(?i)@users\.noreply\.github\.com$''',
+  ]
+  paths = [
+    '''(?:^|/)target/''',
+    '''(?:^|/)\.git/''',
+    '''(?:^|/)node_modules/''',
+    '''\.(?:jar|class|pdf|png|jpg|gif|ico)$''',
+  ]
+

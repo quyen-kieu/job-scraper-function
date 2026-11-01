@@ -8,6 +8,8 @@ import com.microsoft.azure.functions.HttpResponseMessage;
 import com.microsoft.azure.functions.HttpStatus;
 import com.microsoft.azure.functions.HttpStatusType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -16,6 +18,8 @@ import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -70,6 +74,39 @@ class OnDemandScrapeCommandProducerFunctionTest {
 
         assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(String.valueOf(response.getBody())).contains("Unknown or disabled companyId");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "mckesson\r\nFAKE LOG LINE: admin login succeeded",   // CR/LF log forging
+            "<script>alert(1)</script>",                          // reflected markup
+            "McKesson",                                           // uppercase not allowed
+            "-leading-hyphen",                                    // must start with [a-z0-9]
+            "a b",                                                // whitespace
+            "../../etc/passwd",                                   // path-like input
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"  // 51 chars, over the limit
+    })
+    void rejectsMalformedCompanyIdWithoutPublishingOrEchoingIt(String maliciousCompanyId) {
+        DailyScrapeCommandProducer producer = mock(DailyScrapeCommandProducer.class);
+
+        OnDemandScrapeCommandProducerFunction function =
+                new OnDemandScrapeCommandProducerFunction(producer, objectMapper);
+
+        HttpRequestMessage<Optional<String>> request = fakeRequest(Map.of("companyId", maliciousCompanyId));
+        HttpResponseMessage response = function.run(request, fakeContext());
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(String.valueOf(response.getBody()))
+                .contains("Invalid companyId")
+                .doesNotContain(maliciousCompanyId);
+        verify(producer, never()).publishCommand(anyString());
+        verify(producer, never()).publishDailyCommands();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"mckesson", "oracle", "company-1", "a", "0abc"})
+    void acceptsWellFormedCompanyIds(String companyId) {
+        assertThat(OnDemandScrapeCommandProducerFunction.COMPANY_ID_PATTERN.matcher(companyId).matches()).isTrue();
     }
 
     @SuppressWarnings("unchecked")
