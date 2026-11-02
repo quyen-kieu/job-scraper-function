@@ -447,8 +447,9 @@ jobs:
       - name: terraform plan
         run: |
           source ./ci/with-stale-lock-retry.sh
-          output=$(tf_run_with_unlock_retry terraform plan -input=false -lock-timeout=120s -out=tfplan)
-          status=$?
+          # `|| status=$?` keeps bash -e from exiting before the captured Terraform output is echoed.
+          status=0
+          output=$(tf_run_with_unlock_retry terraform plan -input=false -lock-timeout=120s -out=tfplan) || status=$?
           echo "${output}"
           exit ${status}
         env:
@@ -544,8 +545,9 @@ jobs:
       - name: terraform apply (using the plan-confluent job's saved plan)
         run: |
           source ./ci/with-stale-lock-retry.sh
-          output=$(tf_run_with_unlock_retry terraform apply -input=false -lock-timeout=120s -auto-approve tfplan)
-          status=$?
+          # `|| status=$?` keeps bash -e from exiting before the captured Terraform output is echoed.
+          status=0
+          output=$(tf_run_with_unlock_retry terraform apply -input=false -lock-timeout=120s -auto-approve tfplan) || status=$?
           echo "${output}"
           exit ${status}
 

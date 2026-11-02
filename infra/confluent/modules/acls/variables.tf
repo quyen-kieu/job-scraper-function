@@ -23,6 +23,7 @@ variable "kafka_api_secret" {
 variable "acls" {
   description = "List of ACL grants to create. principal_id must be a Confluent service account id (e.g. sa-xxxxx)."
   type = list(object({
+    role          = string # logical role (e.g. "scraper"); part of the stable resource key
     principal_id  = string
     resource_type = string # "TOPIC" or "GROUP"
     resource_name = string

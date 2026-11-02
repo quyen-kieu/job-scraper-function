@@ -7,7 +7,9 @@ terraform {
 }
 
 resource "confluent_kafka_acl" "this" {
-  for_each = { for idx, acl in var.acls : idx => acl }
+  # Keyed by content (not list index) so adding/removing one grant never shifts the address of,
+  # and forces replacement of, unrelated ACLs.
+  for_each = { for acl in var.acls : "${acl.role}:${acl.resource_type}:${acl.resource_name}:${acl.operation}" => acl }
 
   kafka_cluster {
     id = var.kafka_cluster_id
