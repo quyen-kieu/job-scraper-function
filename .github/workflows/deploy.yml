@@ -246,8 +246,8 @@ jobs:
         env:
           CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
           CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
-          CONFLUENT_ENVIRONMENT_ID: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
-          CONFLUENT_CLUSTER_ID: ${{ vars.CONFLUENT_CLUSTER_ID }}
+          CONFLUENT_ENVIRONMENT_ID: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
+          CONFLUENT_CLUSTER_ID: ${{ secrets.CONFLUENT_CLUSTER_ID }}
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -305,8 +305,8 @@ jobs:
           TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
           TF_VAR_kafka_api_key: ${{ secrets.KAFKA_CLIENT_API_KEY }}
           TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
-          TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
-          TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
+          TF_VAR_confluent_environment_id: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
+          TF_VAR_confluent_cluster_id: ${{ secrets.CONFLUENT_CLUSTER_ID }}
         run: |
           set +e
           source ./ci/with-stale-lock-retry.sh
@@ -361,7 +361,7 @@ jobs:
             # Confluent, and `apply-confluent` fails later with a 400/409 that looks unrelated.
             # tf_run_with_unlock_retry (sourced above) auto-recovers from a stale state lock left
             # by a previous cancelled/crashed run — see ci/with-stale-lock-retry.sh.
-            import_output=$(tf_run_with_unlock_retry terraform import -input=false -lock-timeout=120s "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ vars.CONFLUENT_CLUSTER_ID }}/${topic}")
+            import_output=$(tf_run_with_unlock_retry terraform import -input=false -lock-timeout=120s "module.topics.confluent_kafka_topic.this[\"${topic}\"]" "${{ secrets.CONFLUENT_CLUSTER_ID }}/${topic}")
             import_status=$?
             echo "${import_output}"
             if [ ${import_status} -ne 0 ]; then
@@ -382,8 +382,8 @@ jobs:
           TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
           TF_VAR_kafka_api_key: ${{ secrets.KAFKA_CLIENT_API_KEY }}
           TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
-          TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
-          TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
+          TF_VAR_confluent_environment_id: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
+          TF_VAR_confluent_cluster_id: ${{ secrets.CONFLUENT_CLUSTER_ID }}
         run: |
           set +e
           source ./ci/with-stale-lock-retry.sh
@@ -444,7 +444,7 @@ jobs:
               continue
             fi
             echo "Importing existing API key ${key_display_name} (${key_id}) for owner ${sa_id}"
-            import_output=$(tf_run_with_unlock_retry terraform import -input=false -lock-timeout=120s "${key_resource_addr}" "${key_id}/${{ vars.CONFLUENT_CLUSTER_ID }}")
+            import_output=$(tf_run_with_unlock_retry terraform import -input=false -lock-timeout=120s "${key_resource_addr}" "${key_id}/${{ secrets.CONFLUENT_CLUSTER_ID }}")
             import_status=$?
             echo "${import_output}"
             if [ ${import_status} -ne 0 ]; then
@@ -465,8 +465,8 @@ jobs:
           TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
           TF_VAR_kafka_api_key: ${{ secrets.KAFKA_CLIENT_API_KEY }}
           TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
-          TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
-          TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
+          TF_VAR_confluent_environment_id: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
+          TF_VAR_confluent_cluster_id: ${{ secrets.CONFLUENT_CLUSTER_ID }}
       # A saved plan embeds every input variable (incl. Confluent API secrets) and a full state
       # snapshot (incl. service-account API key secrets) in plaintext, and artifacts of a public
       # repo are downloadable by any signed-in GitHub user. Only an encrypted plan is uploaded.
@@ -546,8 +546,8 @@ jobs:
       TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
       TF_VAR_kafka_api_key: ${{ secrets.KAFKA_CLIENT_API_KEY }}
       TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
-      TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
-      TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
+      TF_VAR_confluent_environment_id: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
+      TF_VAR_confluent_cluster_id: ${{ secrets.CONFLUENT_CLUSTER_ID }}
     steps:
       - uses: actions/checkout@v4
       # Must run before terraform apply prints service-account / API key IDs.
@@ -556,8 +556,8 @@ jobs:
         env:
           CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
           CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
-          CONFLUENT_ENVIRONMENT_ID: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
-          CONFLUENT_CLUSTER_ID: ${{ vars.CONFLUENT_CLUSTER_ID }}
+          CONFLUENT_ENVIRONMENT_ID: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
+          CONFLUENT_CLUSTER_ID: ${{ secrets.CONFLUENT_CLUSTER_ID }}
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7.5"

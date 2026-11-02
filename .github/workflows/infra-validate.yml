@@ -77,8 +77,8 @@ jobs:
         env:
           CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
           CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
-          CONFLUENT_ENVIRONMENT_ID: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
-          CONFLUENT_CLUSTER_ID: ${{ vars.CONFLUENT_CLUSTER_ID }}
+          CONFLUENT_ENVIRONMENT_ID: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
+          CONFLUENT_CLUSTER_ID: ${{ secrets.CONFLUENT_CLUSTER_ID }}
 
       - name: terraform plan (read-only preview, requires real backend to run for real)
         if: ${{ vars.TF_PLAN_ENABLED == 'true' }}
@@ -86,6 +86,6 @@ jobs:
         env:
           TF_VAR_confluent_cloud_api_key: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
           TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
-          TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
-          TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
+          TF_VAR_confluent_environment_id: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
+          TF_VAR_confluent_cluster_id: ${{ secrets.CONFLUENT_CLUSTER_ID }}
 
