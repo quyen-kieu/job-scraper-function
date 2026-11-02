@@ -16,7 +16,7 @@
 #   RESOURCE_GROUP            e.g. java-functions-group
 #   FUNCTION_APP_NAME         e.g. job-scraper-function-prod
 #   APP_INSIGHTS_APP_ID       Application Insights "Application ID" (not the connection string)
-#   SMOKE_TEST_COMPANY_ID     defaults to "mckesson" (the only company configured today)
+#   SMOKE_TEST_COMPANY_ID     defaults to "mckesson" (also configured: "gm-financial")
 #   SMOKE_TEST_TIMEOUT_SECS   defaults to 300 (5 minutes)
 #   SMOKE_TEST_POLL_SECS      defaults to 15
 #

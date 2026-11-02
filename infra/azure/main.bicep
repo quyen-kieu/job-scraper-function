@@ -135,6 +135,10 @@ var appSettings = [
   { name: 'JOB_SCRAPER_ENABLED', value: 'true' }
   { name: 'JOB_SCRAPER_COMPANIES_0_ID', value: 'mckesson' }
   { name: 'JOB_SCRAPER_COMPANIES_0_ENABLED', value: 'true' }
+  // GM Financial: "software development" search on its Oracle Recruiting Cloud site
+  // (see GmFinancialScraperConfiguration). Each company gets its own daily summary email.
+  { name: 'JOB_SCRAPER_COMPANIES_1_ID', value: 'gm-financial' }
+  { name: 'JOB_SCRAPER_COMPANIES_1_ENABLED', value: 'true' }
   { name: 'JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN', value: '3' }
   { name: 'JOB_SCRAPER_MAX_DETAIL_PAGES_PER_RUN', value: '10' }
   { name: 'JOB_SCRAPER_REQUEST_DELAY', value: 'PT0.3S' }

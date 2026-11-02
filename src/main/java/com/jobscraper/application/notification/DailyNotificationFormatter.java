@@ -18,7 +18,7 @@ final class DailyNotificationFormatter {
     static String toText(DailyNotificationRequestedEvent event) {
         StringBuilder body = new StringBuilder();
         if (event.companyId() != null) {
-            body.append("Company: ").append(event.companyId()).append(NL);
+            body.append("Company: ").append(CompanyDisplayNames.of(event.companyId())).append(NL);
         }
         body.append("Run ID: ").append(event.runId()).append(NL);
         body.append("Summary date: ").append(event.summaryDate()).append(NL);
@@ -60,7 +60,7 @@ final class DailyNotificationFormatter {
         html.append("<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222\">");
         html.append("<h2 style=\"margin:0 0 8px\">Job postings");
         if (event.companyId() != null) {
-            html.append(" &ndash; ").append(escape(event.companyId()));
+            html.append(" &ndash; ").append(escape(CompanyDisplayNames.of(event.companyId())));
         }
         html.append("</h2>");
         html.append("<p style=\"margin:0 0 16px;color:#555\">")

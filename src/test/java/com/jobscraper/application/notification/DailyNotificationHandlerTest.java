@@ -78,6 +78,24 @@ class DailyNotificationHandlerTest {
     }
 
     @Test
+    void handleSendsOneEmailPerCompanyWhenCompaniesShareDailyRunId() throws Exception {
+        DailyNotificationHandler handler = new DailyNotificationHandler(
+                objectMapper, sender, new InMemorySentNotificationGuard());
+        DailyNotificationRequestedEvent mckesson = new DailyNotificationRequestedEvent(
+                "daily-run", LocalDate.of(2026, 11, 2), 1, 0, 0, 0, List.of(), "mckesson", List.of());
+        DailyNotificationRequestedEvent gmFinancial = new DailyNotificationRequestedEvent(
+                "daily-run", LocalDate.of(2026, 11, 2), 1, 0, 0, 0, List.of(), "gm-financial", List.of());
+
+        handler.handle(objectMapper.writeValueAsString(mckesson));
+        handler.handle(objectMapper.writeValueAsString(gmFinancial));
+        handler.handle(objectMapper.writeValueAsString(gmFinancial)); // Kafka redelivery
+
+        verify(sender).send(mckesson);
+        verify(sender).send(gmFinancial);
+        org.mockito.Mockito.verifyNoMoreInteractions(sender);
+    }
+
+    @Test
     void handlePropagatesSenderFailure() throws Exception {
         DailyNotificationHandler handler = new DailyNotificationHandler(objectMapper, sender, sentNotificationGuard);
 

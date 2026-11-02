@@ -78,7 +78,7 @@ class ResendDailyNotificationSenderTest {
         CreateEmailOptions request = sender.buildRequest(buildEventWithPostings());
 
         assertThat(request.getSubject())
-                .isEqualTo("Job Scraper Daily Summary - mckesson - 2026-08-23 (2 postings, 1 new)");
+                .isEqualTo("Job Scraper Daily Summary - McKesson - 2026-08-23 (2 postings, 1 new)");
 
         assertThat(request.getText())
                 .contains("New postings (1):")
@@ -93,6 +93,25 @@ class ResendDailyNotificationSenderTest {
                 .contains("2026-08-14")
                 .contains("<th>Salary range</th>")
                 .contains("<td>$196,100 - $326,900</td>");
+    }
+
+    @Test
+    void buildRequestUsesCompanyDisplayNameForGmFinancial() {
+        DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
+                "run-gmf", LocalDate.of(2026, 11, 2), 1, 1, 0, 0, List.of(), "gm-financial",
+                List.of(new NotificationPosting("261186", "Actuarial Manager", "United States",
+                        LocalDate.of(2026, 10, 28),
+                        "https://fa-exvu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/261186",
+                        "$115,000-$213,000", PersistenceOutcome.NEW)));
+
+        CreateEmailOptions request = new ResendDailyNotificationSender(resendClient, properties).buildRequest(event);
+
+        assertThat(request.getSubject())
+                .isEqualTo("Job Scraper Daily Summary - GM Financial - 2026-11-02 (1 postings, 1 new)");
+        assertThat(request.getText()).startsWith("Company: GM Financial");
+        assertThat(request.getHtml())
+                .contains("Job postings &ndash; GM Financial")
+                .contains("<td>$115,000-$213,000</td>");
     }
 
     @Test

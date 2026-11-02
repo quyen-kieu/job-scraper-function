@@ -1,0 +1,454 @@
+{
+  "items": [
+    {
+      "SearchId": 1,
+      "Keyword": "software development",
+      "CorrectedKeyword": null,
+      "UseExactKeywordFlag": false,
+      "SuggestedKeyword": null,
+      "ExecuteSpellCheckFlag": true,
+      "Location": null,
+      "LocationId": null,
+      "Radius": 0,
+      "RadiusUnit": "MI",
+      "SelectedTitlesFacet": null,
+      "SelectedCategoriesFacet": null,
+      "SelectedPostingDatesFacet": null,
+      "SelectedLocationsFacet": null,
+      "LastSelectedFacet": null,
+      "Facets": "TITLES;LOCATIONS;LOCATION_LEVEL1;LOCATION_LEVEL2;LOCATION_LEVEL3;CATEGORIES;POSTING_DATES;WORK_LOCATIONS;FLEX_FIELDS;ORGANIZATIONS;WORKPLACE_TYPES",
+      "Offset": 0,
+      "Limit": 3,
+      "SortBy": "POSTING_DATES_DESC",
+      "TotalJobsCount": 53,
+      "Latitude": null,
+      "Longitude": null,
+      "SiteNumber": "CX_1",
+      "JobFamilyId": null,
+      "PostingStartDate": null,
+      "PostingEndDate": null,
+      "SelectedWorkLocationsFacet": null,
+      "RequisitionId": null,
+      "CandidateNumber": null,
+      "WorkLocationZipCode": null,
+      "WorkLocationCountryCode": null,
+      "SelectedFlexFieldsFacets": null,
+      "OrganizationId": null,
+      "SelectedOrganizationsFacet": null,
+      "UserTargetFacetName": null,
+      "UserTargetFacetInputTerm": null,
+      "HotJobFlag": null,
+      "WorkplaceType": null,
+      "SelectedWorkplaceTypesFacet": null,
+      "BotQRShortCode": null,
+      "requisitionList": [
+        {
+          "Id": "261197",
+          "Title": "Intern - Data Engineer",
+          "PostedDate": "2026-10-29",
+          "PostingEndDate": null,
+          "Language": "US",
+          "PrimaryLocationCountry": "US",
+          "GeographyId": 100000029509895,
+          "HotJobFlag": false,
+          "WorkplaceTypeCode": "ORA_HYBRID",
+          "JobFamily": null,
+          "JobFunction": null,
+          "WorkerType": null,
+          "ContractType": null,
+          "ManagerLevel": null,
+          "JobSchedule": null,
+          "JobShift": null,
+          "JobType": null,
+          "StudyLevel": null,
+          "DomesticTravelRequired": null,
+          "InternationalTravelRequired": null,
+          "WorkDurationYears": null,
+          "WorkDurationMonths": null,
+          "WorkHours": null,
+          "WorkDays": null,
+          "LegalEmployer": null,
+          "BusinessUnit": null,
+          "Department": null,
+          "Organization": null,
+          "BusinessUnitId": 300000008619124,
+          "LegalEmployerId": 300000008558108,
+          "OrganizationId": 300000008753063,
+          "MediaThumbURL": null,
+          "ShortDescriptionStr": "Earn experience and gain skills for career success in our full-time summer internship program. Paid interns have the opportunity to work alongside industry leaders on meaningful projects. They also participate in development opportunities, connect with peers and have a great time!",
+          "PrimaryLocation": "Arlington, TX, United States",
+          "Distance": 1793232000000.0,
+          "TrendingFlag": true,
+          "BeFirstToApplyFlag": false,
+          "Relevancy": 14.255067825317383,
+          "WorkplaceType": "Hybrid",
+          "ExternalQualificationsStr": null,
+          "ExternalResponsibilitiesStr": null,
+          "secondaryLocations": []
+        },
+        {
+          "Id": "261186",
+          "Title": "Actuarial Manager",
+          "PostedDate": "2026-10-28",
+          "PostingEndDate": null,
+          "Language": "US",
+          "PrimaryLocationCountry": "US",
+          "GeographyId": 300000000469666,
+          "HotJobFlag": false,
+          "WorkplaceTypeCode": "ORA_REMOTE",
+          "JobFamily": null,
+          "JobFunction": null,
+          "WorkerType": null,
+          "ContractType": null,
+          "ManagerLevel": null,
+          "JobSchedule": null,
+          "JobShift": null,
+          "JobType": null,
+          "StudyLevel": null,
+          "DomesticTravelRequired": null,
+          "InternationalTravelRequired": null,
+          "WorkDurationYears": null,
+          "WorkDurationMonths": null,
+          "WorkHours": null,
+          "WorkDays": null,
+          "LegalEmployer": null,
+          "BusinessUnit": null,
+          "Department": null,
+          "Organization": null,
+          "BusinessUnitId": 300000008619124,
+          "LegalEmployerId": 300000008558108,
+          "OrganizationId": 300000008752227,
+          "MediaThumbURL": null,
+          "ShortDescriptionStr": "GM Financial Protections is growing rapidly as it expands its Protection and Insurance Products into a full captive platform, partnering closely with dealers to deliver competitive F&I solutions and stronger performance. The Actuarial Manager leads advanced modeling, data analysis, and strategic problem‑solving while mentoring a team and collaborating across the business to build innovative actuarial capabilities.\n",
+          "PrimaryLocation": "United States",
+          "Distance": 1793145600000.0,
+          "TrendingFlag": false,
+          "BeFirstToApplyFlag": true,
+          "Relevancy": 14.67061996459961,
+          "WorkplaceType": "Remote",
+          "ExternalQualificationsStr": null,
+          "ExternalResponsibilitiesStr": null,
+          "secondaryLocations": []
+        },
+        {
+          "Id": "261150",
+          "Title": "Technical Principal - Technology Operations",
+          "PostedDate": "2026-10-28",
+          "PostingEndDate": null,
+          "Language": "US",
+          "PrimaryLocationCountry": "US",
+          "GeographyId": 100000029509895,
+          "HotJobFlag": false,
+          "WorkplaceTypeCode": "ORA_HYBRID",
+          "JobFamily": null,
+          "JobFunction": null,
+          "WorkerType": null,
+          "ContractType": null,
+          "ManagerLevel": null,
+          "JobSchedule": null,
+          "JobShift": null,
+          "JobType": null,
+          "StudyLevel": null,
+          "DomesticTravelRequired": null,
+          "InternationalTravelRequired": null,
+          "WorkDurationYears": null,
+          "WorkDurationMonths": null,
+          "WorkHours": null,
+          "WorkDays": null,
+          "LegalEmployer": null,
+          "BusinessUnit": null,
+          "Department": null,
+          "Organization": null,
+          "BusinessUnitId": 300000008619124,
+          "LegalEmployerId": 300000008558108,
+          "OrganizationId": 300000008746427,
+          "MediaThumbURL": null,
+          "ShortDescriptionStr": "The Technical Principal serves as a strategic technology leader and trusted advisor for Technology Operations. This role partners with Technology Operations and business leaders to define and advance enterprise service management capabilities, operating models, governance practices, and long-term roadmaps.",
+          "PrimaryLocation": "Arlington, TX, United States",
+          "Distance": 1793145600000.0,
+          "TrendingFlag": false,
+          "BeFirstToApplyFlag": false,
+          "Relevancy": 13.67889404296875,
+          "WorkplaceType": "Hybrid",
+          "ExternalQualificationsStr": null,
+          "ExternalResponsibilitiesStr": null,
+          "secondaryLocations": []
+        }
+      ],
+      "categoriesFacet": [
+        {
+          "Id": 300000008745193,
+          "Name": "Technology",
+          "TotalCount": 36
+        },
+        {
+          "Id": 300000008745154,
+          "Name": "Temporary",
+          "TotalCount": 7
+        },
+        {
+          "Id": 300000008745157,
+          "Name": "Agile",
+          "TotalCount": 3
+        },
+        {
+          "Id": 300000008745139,
+          "Name": "Insurance",
+          "TotalCount": 2
+        },
+        {
+          "Id": 300000008745148,
+          "Name": "Finance",
+          "TotalCount": 1
+        },
+        {
+          "Id": 300000008745169,
+          "Name": "Supply Chain",
+          "TotalCount": 1
+        },
+        {
+          "Id": 300000008745181,
+          "Name": "Data Analytics",
+          "TotalCount": 1
+        },
+        {
+          "Id": 300000008745184,
+          "Name": "Quality",
+          "TotalCount": 1
+        },
+        {
+          "Id": 300000008745211,
+          "Name": "Real Estate",
+          "TotalCount": 1
+        }
+      ],
+      "locationsFacet": [
+        {
+          "Id": 300000000469666,
+          "Name": "United States",
+          "TotalCount": 53
+        },
+        {
+          "Id": 100000029422993,
+          "Name": "TX, United States",
+          "TotalCount": 50
+        },
+        {
+          "Id": 100000029509895,
+          "Name": "Arlington, TX, United States",
+          "TotalCount": 29
+        },
+        {
+          "Id": 100000029509305,
+          "Name": "Irving, TX, United States",
+          "TotalCount": 21
+        },
+        {
+          "Id": 100000029509610,
+          "Name": "Fort Worth, TX, United States",
+          "TotalCount": 10
+        },
+        {
+          "Id": 100000029509581,
+          "Name": "Dallas, TX, United States",
+          "TotalCount": 2
+        },
+        {
+          "Id": 100000029422976,
+          "Name": "MI, United States",
+          "TotalCount": 1
+        },
+        {
+          "Id": 100000029422995,
+          "Name": "UT, United States",
+          "TotalCount": 1
+        },
+        {
+          "Id": 100000029485241,
+          "Name": "Salt Lake City, UT, United States",
+          "TotalCount": 1
+        },
+        {
+          "Id": 100000029515153,
+          "Name": "Detroit, MI, United States",
+          "TotalCount": 1
+        }
+      ],
+      "postingDatesFacet": [
+        {
+          "Id": 7,
+          "Name": "Less than 7 days",
+          "TotalCount": 5
+        },
+        {
+          "Id": 30,
+          "Name": "Less than 30 days",
+          "TotalCount": 25
+        },
+        {
+          "Id": 31,
+          "Name": "Greater than 30 days",
+          "TotalCount": 28
+        }
+      ],
+      "titlesFacet": [
+        {
+          "Id": "IND_CONT",
+          "Name": "Individual Contributor",
+          "TotalCount": 34
+        },
+        {
+          "Id": "PERF_LEAD",
+          "Name": "Performance Leader",
+          "TotalCount": 9
+        },
+        {
+          "Id": "INTERN",
+          "Name": "Intern",
+          "TotalCount": 7
+        },
+        {
+          "Id": "STR_LEAD",
+          "Name": "Strategic Leader",
+          "TotalCount": 3
+        }
+      ],
+      "workLocationsFacet": [
+        {
+          "Id": 300000008728497,
+          "Name": "US - Arlington AOC I, TX",
+          "TotalCount": 23
+        },
+        {
+          "Id": 300000008728461,
+          "Name": "US - Irving, TX",
+          "TotalCount": 22
+        },
+        {
+          "Id": 300000008728305,
+          "Name": "US - Burnett, TX",
+          "TotalCount": 8
+        },
+        {
+          "Id": 300000008728503,
+          "Name": "US - Arlington AOC II, TX",
+          "TotalCount": 2
+        },
+        {
+          "Id": 300000008728509,
+          "Name": "US - Arlington, TX",
+          "TotalCount": 2
+        },
+        {
+          "Id": 300000008728258,
+          "Name": "US - United States-Fort Worth",
+          "TotalCount": 1
+        },
+        {
+          "Id": 300000008728551,
+          "Name": "US - Arlington AOC III, TX",
+          "TotalCount": 1
+        },
+        {
+          "Id": 300000008728563,
+          "Name": "US - Detroit - MI",
+          "TotalCount": 1
+        },
+        {
+          "Id": 300000221334350,
+          "Name": "US - Salt Lake City, UT",
+          "TotalCount": 1
+        }
+      ],
+      "flexFieldsFacet": [],
+      "organizationsFacet": [
+        {
+          "Id": 300000008750581,
+          "Name": "00301 | Cybersecurity - US",
+          "TotalCount": 6
+        },
+        {
+          "Id": 300000008752227,
+          "Name": "00190 | GM Protection Program - US",
+          "TotalCount": 5
+        },
+        {
+          "Id": 300000008752668,
+          "Name": "01443 | Digital Platforms & Enablement - US",
+          "TotalCount": 5
+        },
+        {
+          "Id": 300000008752240,
+          "Name": "01300 | ITS - Engineering - US",
+          "TotalCount": 4
+        },
+        {
+          "Id": 300000008753063,
+          "Name": "01310 | ITS - Data Engineering, MDM & Operations - US",
+          "TotalCount": 4
+        },
+        {
+          "Id": 1,
+          "Name": "GM Financial",
+          "TotalCount": 2
+        },
+        {
+          "Id": 300000008712626,
+          "Name": "02388 | ITS - Servicing System - US",
+          "TotalCount": 2
+        },
+        {
+          "Id": 300000008712761,
+          "Name": "01405 | ITS - Global Software Solutions - US",
+          "TotalCount": 2
+        },
+        {
+          "Id": 300000008712831,
+          "Name": "01400 | ITS - PSRE - US",
+          "TotalCount": 2
+        },
+        {
+          "Id": 300000008752828,
+          "Name": "00733 | Digital Experience - US",
+          "TotalCount": 2
+        }
+      ],
+      "workplaceTypesFacet": [
+        {
+          "Id": "ORA_HYBRID",
+          "Name": "Hybrid",
+          "TotalCount": 52
+        },
+        {
+          "Id": "ORA_REMOTE",
+          "Name": "Remote",
+          "TotalCount": 1
+        }
+      ]
+    }
+  ],
+  "count": 1,
+  "hasMore": false,
+  "limit": 200,
+  "offset": 0,
+  "links": [
+    {
+      "rel": "self",
+      "href": "https://fa-exvu-saasfaprod1.fa.ocs.oraclecloud.com:443/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions",
+      "name": "recruitingCEJobRequisitions",
+      "kind": "collection"
+    },
+    {
+      "rel": "action",
+      "href": "https://fa-exvu-saasfaprod1.fa.ocs.oraclecloud.com:443/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions/action/getRequisitionsLocationCoordinates",
+      "name": "getRequisitionsLocationCoordinates",
+      "kind": "other"
+    },
+    {
+      "rel": "action",
+      "href": "https://fa-exvu-saasfaprod1.fa.ocs.oraclecloud.com:443/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions/action/getRequisitionDetailsForMap",
+      "name": "getRequisitionDetailsForMap",
+      "kind": "other"
+    }
+  ]
+}

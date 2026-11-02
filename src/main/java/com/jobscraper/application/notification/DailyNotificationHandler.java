@@ -28,8 +28,10 @@ public class DailyNotificationHandler {
      * Deserializes and sends one daily notification request.
      *
      * <p>Skips sending (but still returns the parsed event) if a notification for this event's
-     * {@code runId} was already sent successfully, preventing duplicate emails when Kafka
-     * redelivers a {@code notifications.daily} message. See {@link SentNotificationGuard}.</p>
+     * {@code runId} and {@code companyId} was already sent successfully, preventing duplicate emails
+     * when Kafka redelivers a {@code notifications.daily} message. See {@link SentNotificationGuard}.
+     * The company is part of the key because the daily timer publishes every company under one
+     * shared {@code runId}, and each company gets its own email.</p>
      *
      * @param json raw JSON message
      * @return parsed event
@@ -37,15 +39,27 @@ public class DailyNotificationHandler {
      */
     public DailyNotificationRequestedEvent handle(String json) throws Exception {
         DailyNotificationRequestedEvent event = objectMapper.readValue(json, DailyNotificationRequestedEvent.class);
+        String key = guardKey(event);
 
-        if (sentNotificationGuard.alreadySent(event.runId())) {
-            LOGGER.info("Skipping duplicate daily notification send for runId=" + event.runId());
+        if (sentNotificationGuard.alreadySent(key)) {
+            LOGGER.info("Skipping duplicate daily notification send for " + key);
             return event;
         }
 
         sender.send(event);
-        sentNotificationGuard.markSent(event.runId());
+        sentNotificationGuard.markSent(key);
         return event;
+    }
+
+    /**
+     * Returns the de-duplication key: {@code runId} alone for legacy events without a company,
+     * otherwise {@code runId:companyId}.
+     */
+    static String guardKey(DailyNotificationRequestedEvent event) {
+        if (event.companyId() == null || event.companyId().isBlank()) {
+            return event.runId();
+        }
+        return event.runId() + ":" + event.companyId();
     }
 }
 

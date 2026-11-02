@@ -614,6 +614,41 @@ Fixtures reflecting this real shape are provided in `src/test/resources/fixtures
 (`search-results-page1.json`, `search-results-empty-page.json`, `job-detail-real.html`) for
 deterministic parser testing.
 
+### GM Financial site reference (Oracle Recruiting Cloud, verified live 2026-11-02)
+
+Company ID `gm-financial` runs a **"software development"** keyword search against GM Financial's
+Oracle Recruiting Cloud (Oracle HCM Candidate Experience) site:
+`https://fa-exvu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?keyword=software%20development`.
+
+That page is a JavaScript SPA, so the scraper calls the same anonymous, read-only REST endpoints the
+page uses (generic implementation in `scraper/companies/oracle/`, reusable for any Oracle Recruiting
+Cloud employer; GM Financial is registered in `scraper/companies/gmfinancial/GmFinancialScraperConfiguration`):
+
+```
+# Search, newest first, 25 per page (requisitionList is only returned with expand=requisitionList...)
+GET https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitions
+    ?onlyData=true&expand=requisitionList.secondaryLocations
+    &finder=findReqs;siteNumber=CX_1,limit=25,keyword=%22software%20development%22,sortBy=POSTING_DATES_DESC,offset={n}
+
+# Detail (salary is read from the description HTML fields, e.g. "The base range for this role is : $115,000-$213,000")
+GET https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails
+    ?expand=all&onlyData=true&finder=ById;Id=%22{Id}%22,siteNumber=CX_1
+```
+
+Search results: `items[0].TotalJobsCount` and `items[0].requisitionList[]` (`Id`, `Title`,
+`PrimaryLocation`, `PostedDate` as `yyyy-MM-dd`). The email links to the public job page
+`https://{host}/hcmUI/CandidateExperience/en/sites/CX_1/job/{Id}`. The same per-run caps apply
+(`JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN` x 25 postings, `JOB_SCRAPER_MAX_DETAIL_PAGES_PER_RUN`
+detail fetches, so only the newest postings get a salary lookup). Most GM Financial postings say
+"Competitive pay" rather than a dollar range, so the email shows `–` for those.
+
+Each company gets its **own daily summary email** (subject `... - GM Financial - {date} ...`): the
+normalizer publishes one `notifications.daily` event per company run, and the email de-duplication
+guard is keyed by `runId:companyId` because the daily timer runs every company under one `runId`.
+
+Real fixtures: `src/test/resources/fixtures/gmfinancial/` (`search-results-page1.json`,
+`job-detail-with-salary.json`, `job-detail-without-salary.json`).
+
 ### Local file output (pre-Blob/Cosmos)
 
 Before Blob Storage and Cosmos DB are wired up for McKesson, raw scrape output and a structured
@@ -1372,7 +1407,7 @@ src/test/java/com/jobscraper/
 |       |- JobLevelClassifierTest.java
 |       `- TitleNormalizerTest.java
 |   `- metrics/
-|       `- MonthlyMetricTest.java
+|       |- MonthlyMetricTest.java
  |- infrastructure/
 |   |- http/
 |   |   `- JavaHttpJobSearchClientTest.java
@@ -1445,8 +1480,8 @@ Use the following skeleton. Replace the placeholder values with your workstation
     "JOB_SCRAPER_ENABLED": "true",
     "JOB_SCRAPER_COMPANIES_0_ID": "mckesson",
     "JOB_SCRAPER_COMPANIES_0_ENABLED": "true",
-    "JOB_SCRAPER_COMPANIES_1_ID": "oracle",
-    "JOB_SCRAPER_COMPANIES_1_ENABLED": "false",
+    "JOB_SCRAPER_COMPANIES_1_ID": "gm-financial",
+    "JOB_SCRAPER_COMPANIES_1_ENABLED": "true",
     "JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN": "3",
     "JOB_SCRAPER_MAX_DETAIL_PAGES_PER_RUN": "10",
     "JOB_SCRAPER_REQUEST_DELAY": "PT0.3S",
@@ -1665,4 +1700,3 @@ is the sole access control on this endpoint. An optional shared-secret header is
 future enhancement if this endpoint is ever exposed outside a trusted network.
 
 ---
-

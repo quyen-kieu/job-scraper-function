@@ -66,7 +66,7 @@ public class ResendDailyNotificationSender implements DailyNotificationSender {
     private String buildSubject(DailyNotificationRequestedEvent event) {
         StringBuilder subject = new StringBuilder(properties.subjectPrefix());
         if (event.companyId() != null && !event.companyId().isBlank()) {
-            subject.append(" - ").append(event.companyId());
+            subject.append(" - ").append(CompanyDisplayNames.of(event.companyId()));
         }
         subject.append(" - ").append(event.summaryDate());
         if (!event.postings().isEmpty()) {
