@@ -92,6 +92,26 @@ class McKessonScraperTest {
     }
 
     @Test
+    void shouldAttachSalaryRangeParsedFromDetailPage() throws Exception {
+        properties.setMaxDetailPagesPerRun(1);
+        String singlePageJson = loadFixture("search-results-page1.json")
+                .replace("data-total-pages=\\\"3\\\"", "data-total-pages=\\\"1\\\"");
+        String detailHtml = loadFixture("job-detail-real.html").replace("</section>",
+                "</section><div class=\"ats-description\"><p><b>Our Base Pay Range for this position</b></p>"
+                        + "$123,200 - $205,400</div>");
+        HttpResponse<String> searchResponse = textResponse(singlePageJson);
+        HttpResponse<String> detailResponse = textResponse(detailHtml);
+        when(httpClient.get(any(URI.class))).thenReturn(searchResponse).thenReturn(detailResponse);
+
+        ScrapeResult result = scraper.scrape(new ScrapeContext("run-salary", "mckesson", Instant.now()));
+
+        assertThat(result.jobs()).hasSizeGreaterThanOrEqualTo(2);
+        assertThat(result.jobs().get(0).salaryRange()).isEqualTo("$123,200 - $205,400");
+        // Beyond the detail-page cap no description is fetched, so no salary is known.
+        assertThat(result.jobs().get(1).salaryRange()).isNull();
+    }
+
+    @Test
     void shouldStopAtSearchPageCapEvenWhenMorePagesExist() throws Exception {
         properties.setMaxSearchPagesPerRun(1);
         properties.setMaxDetailPagesPerRun(0);

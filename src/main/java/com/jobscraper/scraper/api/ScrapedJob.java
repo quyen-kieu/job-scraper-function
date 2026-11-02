@@ -12,13 +12,16 @@ import java.util.Objects;
  * @param location the location as displayed on the company site
  * @param datePosted the posting date, or {@code null} if it could not be parsed
  * @param url the absolute public URL of the job detail page, or {@code null} if unknown
+ * @param salaryRange the salary range read from the job description (e.g. {@code $101,000 - $168,400}),
+ *                    or {@code null} if the detail page was not fetched or lists no pay
  */
 public record ScrapedJob(
         String externalJobId,
         String title,
         String location,
         LocalDate datePosted,
-        String url) {
+        String url,
+        String salaryRange) {
 
     public ScrapedJob {
         Objects.requireNonNull(externalJobId, "externalJobId must not be null");

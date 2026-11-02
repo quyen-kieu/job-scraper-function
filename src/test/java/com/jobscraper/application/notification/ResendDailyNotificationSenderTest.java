@@ -82,7 +82,7 @@ class ResendDailyNotificationSenderTest {
 
         assertThat(request.getText())
                 .contains("New postings (1):")
-                .contains("Lead Data Architect | Irving, TX | posted 2026-08-14")
+                .contains("Lead Data Architect | Irving, TX | posted 2026-08-14 | salary $196,100 - $326,900")
                 .contains("https://careers.mckesson.com/en/job/irving/lead/733/1")
                 .contains("Previously seen postings (1):")
                 .contains("Analyst | Remote");
@@ -90,7 +90,9 @@ class ResendDailyNotificationSenderTest {
         assertThat(request.getHtml())
                 .contains("<a href=\"https://careers.mckesson.com/en/job/irving/lead/733/1\">Lead Data Architect</a>")
                 .contains("Irving, TX")
-                .contains("2026-08-14");
+                .contains("2026-08-14")
+                .contains("<th>Salary range</th>")
+                .contains("<td>$196,100 - $326,900</td>");
     }
 
     @Test
@@ -98,14 +100,16 @@ class ResendDailyNotificationSenderTest {
         DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
                 "run-1", LocalDate.of(2026, 8, 23), 1, 1, 0, 0, List.of(), "mckesson",
                 List.of(new NotificationPosting("9", "<script>x</script> & Co", "A \"B\"", null,
-                        "javascript:alert(1)", PersistenceOutcome.NEW)));
+                        "javascript:alert(1)", "<b>$1</b>", PersistenceOutcome.NEW)));
 
         String html = new ResendDailyNotificationSender(resendClient, properties).buildRequest(event).getHtml();
 
         assertThat(html)
                 .contains("&lt;script&gt;x&lt;/script&gt; &amp; Co")
                 .contains("A &quot;B&quot;")
+                .contains("&lt;b&gt;$1&lt;/b&gt;")
                 .doesNotContain("<script>")
+                .doesNotContain("<b>$1</b>")
                 .doesNotContain("javascript:");
     }
 
@@ -122,8 +126,8 @@ class ResendDailyNotificationSenderTest {
                 List.of(
                         new NotificationPosting("1", "Lead Data Architect", "Irving, TX",
                                 LocalDate.of(2026, 8, 14), "https://careers.mckesson.com/en/job/irving/lead/733/1",
-                                PersistenceOutcome.NEW),
-                        new NotificationPosting("2", "Analyst", "Remote", null, null,
+                                "$196,100 - $326,900", PersistenceOutcome.NEW),
+                        new NotificationPosting("2", "Analyst", "Remote", null, null, null,
                                 PersistenceOutcome.UNCHANGED)));
     }
 

@@ -13,6 +13,7 @@ import java.util.Objects;
  * @param location the job location
  * @param datePosted the posting date, or {@code null} if unknown
  * @param url the public job URL, or {@code null} if unknown
+ * @param salaryRange the salary range from the job description, or {@code null} if unknown
  * @param outcome whether the posting is new, changed, or unchanged since it was last stored
  */
 public record NotificationPosting(
@@ -21,6 +22,7 @@ public record NotificationPosting(
         String location,
         LocalDate datePosted,
         String url,
+        String salaryRange,
         PersistenceOutcome outcome) {
 
     public NotificationPosting {

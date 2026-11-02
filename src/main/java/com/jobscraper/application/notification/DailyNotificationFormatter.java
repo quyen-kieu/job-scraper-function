@@ -38,6 +38,9 @@ final class DailyNotificationFormatter {
                 if (posting.datePosted() != null) {
                     body.append(" | posted ").append(posting.datePosted());
                 }
+                if (hasText(posting.salaryRange())) {
+                    body.append(" | salary ").append(posting.salaryRange());
+                }
                 body.append(NL);
                 if (posting.url() != null) {
                     body.append("    ").append(posting.url()).append(NL);
@@ -80,7 +83,7 @@ final class DailyNotificationFormatter {
                     .append(" (").append(postings.size()).append(")</h3>");
             html.append("<table cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;width:100%\">");
             html.append("<tr style=\"background:#f2f2f2;text-align:left\">")
-                    .append("<th>Title</th><th>Location</th><th>Posted</th></tr>");
+                    .append("<th>Title</th><th>Location</th><th>Posted</th><th>Salary range</th></tr>");
             for (NotificationPosting posting : postings) {
                 html.append("<tr style=\"border-bottom:1px solid #e5e5e5\"><td>");
                 if (isHttpUrl(posting.url())) {
@@ -91,6 +94,8 @@ final class DailyNotificationFormatter {
                 }
                 html.append("</td><td>").append(escape(posting.location())).append("</td><td>")
                         .append(posting.datePosted() == null ? "" : escape(posting.datePosted().toString()))
+                        .append("</td><td>")
+                        .append(hasText(posting.salaryRange()) ? escape(posting.salaryRange()) : "&ndash;")
                         .append("</td></tr>");
             }
             html.append("</table>");
@@ -108,6 +113,10 @@ final class DailyNotificationFormatter {
         html.append("<p style=\"margin-top:16px;color:#888;font-size:12px\">Run ID: ")
                 .append(escape(event.runId())).append("</p></div>");
         return html.toString();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private static boolean isHttpUrl(String url) {

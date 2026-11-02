@@ -5,6 +5,7 @@ import com.jobscraper.function.JobScraperProperties;
 import com.jobscraper.infrastructure.blob.RawScrapeStorage;
 import com.jobscraper.scraper.api.CompanyScraper;
 import com.jobscraper.scraper.api.JobSearchHttpClient;
+import com.jobscraper.scraper.api.SalaryRangeExtractor;
 import com.jobscraper.scraper.api.ScrapeContext;
 import com.jobscraper.scraper.api.ScrapeResult;
 import com.jobscraper.scraper.api.ScrapedJob;
@@ -17,8 +18,10 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -75,9 +78,10 @@ public class McKessonScraper implements CompanyScraper {
         List<String> blobPaths = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         Set<McKessonJobSummary> allJobs = new LinkedHashSet<>();
+        Map<String, String> salaryRangesByJobId = new HashMap<>();
 
         int searchPagesFetched = fetchSearchPages(context, blobPaths, errors, allJobs);
-        int detailPagesFetched = fetchDetailPages(context, blobPaths, errors, allJobs);
+        int detailPagesFetched = fetchDetailPages(context, blobPaths, errors, allJobs, salaryRangesByJobId);
 
         Instant completedAt = Instant.now();
 
@@ -93,7 +97,9 @@ public class McKessonScraper implements CompanyScraper {
                 detailPagesFetched,
                 blobPaths,
                 errors,
-                allJobs.stream().map(McKessonScraper::toScrapedJob).toList()
+                allJobs.stream()
+                        .map(job -> toScrapedJob(job, salaryRangesByJobId.get(job.externalJobId())))
+                        .toList()
         );
     }
 
@@ -101,8 +107,11 @@ public class McKessonScraper implements CompanyScraper {
      * Maps a search-results entry to the company-agnostic {@link ScrapedJob}. The date is parsed
      * from the site's {@code MM/dd/yyyy} display format; unparseable values become {@code null}
      * rather than failing the run.
+     *
+     * @param job the search-results entry
+     * @param salaryRange the salary range parsed from the detail page, or {@code null}
      */
-    static ScrapedJob toScrapedJob(McKessonJobSummary job) {
+    static ScrapedJob toScrapedJob(McKessonJobSummary job, String salaryRange) {
         LocalDate datePosted;
         try {
             datePosted = LocalDate.parse(job.datePostedRaw().trim(), DATE_POSTED_FORMAT);
@@ -110,7 +119,7 @@ public class McKessonScraper implements CompanyScraper {
             datePosted = null;
         }
         String url = job.detailPath().isBlank() ? null : BASE_URL + job.detailPath();
-        return new ScrapedJob(job.externalJobId(), job.titleRaw(), job.location(), datePosted, url);
+        return new ScrapedJob(job.externalJobId(), job.titleRaw(), job.location(), datePosted, url, salaryRange);
     }
 
     private int fetchSearchPages(
@@ -164,7 +173,8 @@ public class McKessonScraper implements CompanyScraper {
             ScrapeContext context,
             List<String> blobPaths,
             List<String> errors,
-            Set<McKessonJobSummary> allJobs) {
+            Set<McKessonJobSummary> allJobs,
+            Map<String, String> salaryRangesByJobId) {
         int detailPagesFetched = 0;
         int detailCap = properties.maxDetailPagesPerRun();
 
@@ -178,6 +188,8 @@ public class McKessonScraper implements CompanyScraper {
                 blobPaths.add(storage.writeJobDetail(
                         context.companyId(), context.runId(), job.externalJobId(), response.body()));
                 detailPagesFetched++;
+                SalaryRangeExtractor.extract(response.body())
+                        .ifPresent(range -> salaryRangesByJobId.put(job.externalJobId(), range));
             } catch (Exception e) {
                 errors.add("Detail page fetch failed for job " + job.externalJobId() + ": " + e.getMessage());
             }

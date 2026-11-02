@@ -64,7 +64,7 @@ class ScrapeCompletedNormalizationHandlerTest {
     @Test
     void shouldBuildPostingsFromScrapedJobsWithRealTitleLocationAndUrl() throws Exception {
         ScrapedJob job = new ScrapedJob("99215825472", "Lead Data Architect (Healthcare)", "Irving, TX",
-                LocalDate.of(2026, 8, 14), "https://careers.mckesson.com/en/job/irving/lead/733/99215825472");
+                LocalDate.of(2026, 8, 14), "https://careers.mckesson.com/en/job/irving/lead/733/99215825472", null);
 
         int count = handler.handle(json(eventWithJobs(List.of(job))));
 
@@ -82,9 +82,11 @@ class ScrapeCompletedNormalizationHandlerTest {
 
     @Test
     void shouldPublishOneNotificationListingEveryScrapedPostingWithOutcomes() throws Exception {
-        ScrapedJob newJob = new ScrapedJob("1", "Data Engineer", "Remote", LocalDate.of(2026, 8, 14), "https://x/1");
-        ScrapedJob changedJob = new ScrapedJob("2", "Senior Analyst", "Dallas, TX", null, "https://x/2");
-        ScrapedJob unchangedJob = new ScrapedJob("3", "Architect", "Irving, TX", LocalDate.of(2026, 8, 1), "https://x/3");
+        ScrapedJob newJob = new ScrapedJob("1", "Data Engineer", "Remote", LocalDate.of(2026, 8, 14), "https://x/1",
+                "$101,000 - $168,400");
+        ScrapedJob changedJob = new ScrapedJob("2", "Senior Analyst", "Dallas, TX", null, "https://x/2", null);
+        ScrapedJob unchangedJob = new ScrapedJob("3", "Architect", "Irving, TX", LocalDate.of(2026, 8, 1), "https://x/3",
+                "$22.25/hr");
 
         when(postingRepository.findById("mckesson:2", "mckesson"))
                 .thenReturn(Optional.of(stored("2", "sha256:stale", Instant.parse("2026-07-01T00:00:00Z"))));
@@ -109,11 +111,11 @@ class ScrapeCompletedNormalizationHandlerTest {
         assertThat(notification.failures()).containsExactly("detail page 2 timed out");
         assertThat(notification.postings())
                 .extracting(NotificationPosting::externalJobId, NotificationPosting::title,
-                        NotificationPosting::url, NotificationPosting::outcome)
+                        NotificationPosting::url, NotificationPosting::salaryRange, NotificationPosting::outcome)
                 .containsExactly(
-                        tuple("1", "Data Engineer", "https://x/1", PersistenceOutcome.NEW),
-                        tuple("2", "Senior Analyst", "https://x/2", PersistenceOutcome.UPDATED),
-                        tuple("3", "Architect", "https://x/3", PersistenceOutcome.UNCHANGED));
+                        tuple("1", "Data Engineer", "https://x/1", "$101,000 - $168,400", PersistenceOutcome.NEW),
+                        tuple("2", "Senior Analyst", "https://x/2", null, PersistenceOutcome.UPDATED),
+                        tuple("3", "Architect", "https://x/3", "$22.25/hr", PersistenceOutcome.UNCHANGED));
     }
 
     @Test
@@ -122,7 +124,7 @@ class ScrapeCompletedNormalizationHandlerTest {
         when(postingRepository.findById("mckesson:1", "mckesson"))
                 .thenReturn(Optional.of(stored("1", "sha256:stale", firstSeen)));
 
-        handler.handle(json(eventWithJobs(List.of(new ScrapedJob("1", "Data Engineer", "Remote", null, null)))));
+        handler.handle(json(eventWithJobs(List.of(new ScrapedJob("1", "Data Engineer", "Remote", null, null, null)))));
 
         ArgumentCaptor<NormalizedJobPosting> captor = ArgumentCaptor.forClass(NormalizedJobPosting.class);
         verify(publisher).publish(captor.capture());
@@ -132,7 +134,7 @@ class ScrapeCompletedNormalizationHandlerTest {
 
     @Test
     void shouldDeduplicateJobsByExternalId() throws Exception {
-        ScrapedJob job = new ScrapedJob("1", "Data Engineer", "Remote", null, null);
+        ScrapedJob job = new ScrapedJob("1", "Data Engineer", "Remote", null, null, null);
 
         int count = handler.handle(json(eventWithJobs(List.of(job, job))));
 
@@ -194,7 +196,7 @@ class ScrapeCompletedNormalizationHandlerTest {
     @Test
     void shouldNotPublishNotificationWhenPostingPublishFails() throws Exception {
         doThrow(new IllegalStateException("Kafka unavailable")).when(publisher).publish(any(NormalizedJobPosting.class));
-        String json = json(eventWithJobs(List.of(new ScrapedJob("1", "Data Engineer", "Remote", null, null))));
+        String json = json(eventWithJobs(List.of(new ScrapedJob("1", "Data Engineer", "Remote", null, null, null))));
 
         assertThatThrownBy(() -> handler.handle(json))
                 .isInstanceOf(IllegalStateException.class)

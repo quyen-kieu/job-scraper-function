@@ -120,7 +120,8 @@ public class ScrapeCompletedNormalizationHandler {
                 changedCount++;
             }
             notificationPostings.add(new NotificationPosting(
-                    job.externalJobId(), job.title(), job.location(), job.datePosted(), job.url(), outcome));
+                    job.externalJobId(), job.title(), job.location(), job.datePosted(), job.url(),
+                    job.salaryRange(), outcome));
         }
 
         dailyNotificationPublisher.publish(new DailyNotificationRequestedEvent(
@@ -160,6 +161,7 @@ public class ScrapeCompletedNormalizationHandler {
                         externalJobId,
                         "Unknown title (pending detail-page fetch): " + externalJobId,
                         "Unknown",
+                        null,
                         null,
                         null));
             }
