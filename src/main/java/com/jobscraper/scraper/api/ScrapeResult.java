@@ -18,9 +18,27 @@ public record ScrapeResult(
         int searchPagesFetched,
         int detailPagesFetched,
         List<String> blobPaths,
-        List<String> errors) {
+        List<String> errors,
+        List<ScrapedJob> jobs) {
+
+    /**
+     * Creates a result without structured job data (only raw blob paths).
+     */
+    public ScrapeResult(
+            String runId,
+            String companyId,
+            Instant startedAt,
+            Instant completedAt,
+            int searchPagesFetched,
+            int detailPagesFetched,
+            List<String> blobPaths,
+            List<String> errors) {
+        this(runId, companyId, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
+                blobPaths, errors, List.of());
+    }
 
     public ScrapeResult {
+        jobs = jobs == null ? List.of() : List.copyOf(jobs);
         Objects.requireNonNull(runId, "runId must not be null");
         Objects.requireNonNull(companyId, "companyId must not be null");
         Objects.requireNonNull(startedAt, "startedAt must not be null");

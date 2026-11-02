@@ -114,7 +114,41 @@ while [[ "$(date +%s)" -lt "${DEADLINE}" ]]; do
 
   if [[ -n "${RESULT}" ]]; then
     echo "-- Found expected trace: ${RESULT}"
-    echo "== Smoke test PASSED: full event path (HTTP trigger -> Kafka -> scrape) verified. =="
+    SCRAPE_OK=1
+    break
+  fi
+
+  echo "   ...not yet observed, retrying in ${SMOKE_TEST_POLL_SECS}s"
+  sleep "${SMOKE_TEST_POLL_SECS}"
+done
+
+if [[ "${SCRAPE_OK:-0}" -ne 1 ]]; then
+  echo "ERROR: timed out after ${SMOKE_TEST_TIMEOUT_SECS}s waiting for the scrape-completed trace." >&2
+  echo "This means the event path (HTTP trigger -> job.scrape.commands -> ScraperConsumerFunction)" >&2
+  echo "did not complete as expected. Check Application Insights and the Function App's logs." >&2
+  exit 1
+fi
+
+# Phase 2: verify the notification leg (normalizer -> notifications.daily -> ResendEmailConsumerFunction).
+# Matches the trace ResendEmailConsumerFunction logs after the email was sent (or deduplicated).
+# Set SMOKE_TEST_VERIFY_EMAIL=false to skip.
+if [[ "${SMOKE_TEST_VERIFY_EMAIL:-true}" != "true" || -z "${RUN_ID}" ]]; then
+  echo "== Smoke test PASSED: event path (HTTP trigger -> Kafka -> scrape) verified (email check skipped). =="
+  exit 0
+fi
+
+echo "-- Polling Application Insights for the email-sent trace for runId=${RUN_ID}..."
+EMAIL_KQL="traces | where timestamp > ago(15m) | where message contains 'Processed daily notification request runId=${RUN_ID}' | take 1"
+DEADLINE=$(( $(date +%s) + SMOKE_TEST_TIMEOUT_SECS ))
+while [[ "$(date +%s)" -lt "${DEADLINE}" ]]; do
+  RESULT=$(az monitor app-insights query \
+    --app "${APP_INSIGHTS_APP_ID}" \
+    --analytics-query "${EMAIL_KQL}" \
+    --query "tables[0].rows" -o tsv 2>/dev/null || echo "")
+
+  if [[ -n "${RESULT}" ]]; then
+    echo "-- Found expected trace: ${RESULT}"
+    echo "== Smoke test PASSED: full event path (trigger -> scrape -> normalize -> email) verified. =="
     exit 0
   fi
 
@@ -122,9 +156,8 @@ while [[ "$(date +%s)" -lt "${DEADLINE}" ]]; do
   sleep "${SMOKE_TEST_POLL_SECS}"
 done
 
-echo "ERROR: timed out after ${SMOKE_TEST_TIMEOUT_SECS}s waiting for the scrape-completed trace." >&2
-echo "This means the event path (HTTP trigger -> job.scrape.commands -> ScraperConsumerFunction)" >&2
-echo "did not complete as expected. Check Application Insights and the Function App's logs." >&2
+echo "ERROR: timed out after ${SMOKE_TEST_TIMEOUT_SECS}s waiting for the email-sent trace for runId=${RUN_ID}." >&2
+echo "Check NormalizerConsumerFunction / ResendEmailConsumerFunction failures in Application Insights." >&2
 exit 1
 
 

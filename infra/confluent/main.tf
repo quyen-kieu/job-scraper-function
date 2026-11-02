@@ -63,9 +63,9 @@ locals {
   )
 
   # Five logical roles matching the five Kafka consumer groups (KAFKA_*_CONSUMER_GROUP settings).
-  # Stage 7 scope decision: WRITE on notifications.daily is granted to `persistence`, because
-  # NormalizedPostingPersistenceHandler (not the email consumer) is the actual publisher of
-  # DailyNotificationRequestedEvent via RunCompletionAggregator (see docs/STAGE7_PLAN.md §0/§5).
+  # WRITE on notifications.daily is granted to `normalizer`, because
+  # ScrapeCompletedNormalizationHandler publishes one DailyNotificationRequestedEvent per company
+  # run (it is the only step that sees the run's full posting list in one invocation).
   service_accounts = {
     scraper = {
       display_name = "sa-job-scraper-scraper"
@@ -73,11 +73,11 @@ locals {
     }
     normalizer = {
       display_name = "sa-job-scraper-normalizer"
-      description  = "Normalizer consumer (job.scrape.completed) / producer (job.postings.normalized)"
+      description  = "Normalizer consumer (job.scrape.completed) / producer (job.postings.normalized, notifications.daily)"
     }
     persistence = {
       display_name = "sa-job-scraper-persistence"
-      description  = "Persistence consumer (job.postings.normalized) / producer (notifications.daily)"
+      description  = "Persistence consumer (job.postings.normalized)"
     }
     metrics = {
       display_name = "sa-job-scraper-metrics"
@@ -105,17 +105,17 @@ locals {
       { principal_id = try(module.service_accounts.service_account_ids["scraper"], ""), resource_type = "GROUP", resource_name = local.consumer_groups["scraper"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
       { principal_id = try(module.service_accounts.service_account_ids["scraper"], ""), resource_type = "TOPIC", resource_name = "job.scrape.completed", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
     ],
-    # normalizer: read completed + its consumer group, write postings.normalized
+    # normalizer: read completed + its consumer group, write postings.normalized and notifications.daily
     [
       { principal_id = try(module.service_accounts.service_account_ids["normalizer"], ""), resource_type = "TOPIC", resource_name = "job.scrape.completed", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
       { principal_id = try(module.service_accounts.service_account_ids["normalizer"], ""), resource_type = "GROUP", resource_name = local.consumer_groups["normalizer"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
       { principal_id = try(module.service_accounts.service_account_ids["normalizer"], ""), resource_type = "TOPIC", resource_name = "job.postings.normalized", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
+      { principal_id = try(module.service_accounts.service_account_ids["normalizer"], ""), resource_type = "TOPIC", resource_name = "notifications.daily", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
     ],
-    # persistence: read postings.normalized + its consumer group, write notifications.daily
+    # persistence: read postings.normalized + its consumer group only
     [
       { principal_id = try(module.service_accounts.service_account_ids["persistence"], ""), resource_type = "TOPIC", resource_name = "job.postings.normalized", pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
       { principal_id = try(module.service_accounts.service_account_ids["persistence"], ""), resource_type = "GROUP", resource_name = local.consumer_groups["persistence"], pattern_type = "LITERAL", operation = "READ", permission = "ALLOW" },
-      { principal_id = try(module.service_accounts.service_account_ids["persistence"], ""), resource_type = "TOPIC", resource_name = "notifications.daily", pattern_type = "LITERAL", operation = "WRITE", permission = "ALLOW" },
     ],
     # metrics: read postings.normalized + its consumer group, write metrics.monthly
     [

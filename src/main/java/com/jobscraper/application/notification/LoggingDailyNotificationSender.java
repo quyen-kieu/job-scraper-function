@@ -20,15 +20,7 @@ public class LoggingDailyNotificationSender implements DailyNotificationSender {
 
     @Override
     public void send(DailyNotificationRequestedEvent event) {
-        LOGGER.info(
-                "Daily notification summary runId=" + event.runId()
-                        + " date=" + event.summaryDate()
-                        + " companiesProcessed=" + event.companiesProcessed()
-                        + " newCount=" + event.newCount()
-                        + " changedCount=" + event.changedCount()
-                        + " inactiveCount=" + event.inactiveCount()
-                        + " failures=" + event.failures().size()
-        );
+        LOGGER.info(DailyNotificationFormatter.toText(event));
     }
 }
 

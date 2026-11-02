@@ -1,8 +1,6 @@
 package com.jobscraper.application.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jobscraper.application.notification.DailyNotificationPublisher;
-import com.jobscraper.application.notification.RunCompletionAggregator;
 import com.jobscraper.domain.job.JobObservation;
 import com.jobscraper.domain.job.NormalizedJobPosting;
 import com.jobscraper.infrastructure.cosmos.JobObservationRepository;
@@ -26,12 +24,9 @@ import java.util.UUID;
  * this method returns, so any failure here propagates to the caller and blocks the
  * Kafka checkpoint (see {@link com.jobscraper.function.PersistenceConsumerFunction}).</p>
  *
- * <p><b>Stage 6:</b> also classifies each upsert as {@link PersistenceOutcome#NEW},
- * {@link PersistenceOutcome#UPDATED}, or {@link PersistenceOutcome#UNCHANGED} (by comparing
- * against any prior document's {@code contentHash}) and reports it to
- * {@link RunCompletionAggregator}. Once every posting from a company's scrape has been
- * reported, the aggregator returns a completed daily summary, which is published to
- * {@code notifications.daily} via {@link DailyNotificationPublisher}.</p>
+ * <p>New/changed/unchanged classification and the daily notification are handled upstream by
+ * {@link com.jobscraper.application.normalization.ScrapeCompletedNormalizationHandler}, which
+ * sees the whole company run in one invocation.</p>
  */
 @Service
 public class NormalizedPostingPersistenceHandler {
@@ -39,33 +34,24 @@ public class NormalizedPostingPersistenceHandler {
     private final ObjectMapper objectMapper;
     private final JobPostingRepository postingRepository;
     private final JobObservationRepository observationRepository;
-    private final RunCompletionAggregator runCompletionAggregator;
-    private final DailyNotificationPublisher dailyNotificationPublisher;
     private final Clock clock;
 
     @Autowired
     public NormalizedPostingPersistenceHandler(
             ObjectMapper objectMapper,
             JobPostingRepository postingRepository,
-            JobObservationRepository observationRepository,
-            RunCompletionAggregator runCompletionAggregator,
-            DailyNotificationPublisher dailyNotificationPublisher) {
-        this(objectMapper, postingRepository, observationRepository,
-                runCompletionAggregator, dailyNotificationPublisher, Clock.systemUTC());
+            JobObservationRepository observationRepository) {
+        this(objectMapper, postingRepository, observationRepository, Clock.systemUTC());
     }
 
     NormalizedPostingPersistenceHandler(
             ObjectMapper objectMapper,
             JobPostingRepository postingRepository,
             JobObservationRepository observationRepository,
-            RunCompletionAggregator runCompletionAggregator,
-            DailyNotificationPublisher dailyNotificationPublisher,
             Clock clock) {
         this.objectMapper = objectMapper;
         this.postingRepository = postingRepository;
         this.observationRepository = observationRepository;
-        this.runCompletionAggregator = runCompletionAggregator;
-        this.dailyNotificationPublisher = dailyNotificationPublisher;
         this.clock = clock;
     }
 
@@ -75,12 +61,9 @@ public class NormalizedPostingPersistenceHandler {
      * <p>Steps:
      * <ol>
      *   <li>Deserialize JSON into {@link NormalizedJobPosting}</li>
-     *   <li>Look up any prior document to classify a {@link PersistenceOutcome}</li>
      *   <li>Upsert the posting into the {@code job-postings} container</li>
      *   <li>Build a {@link JobObservation} keyed by the current scrape date and upsert it
      *       into the {@code job-observations} container</li>
-     *   <li>Report the outcome to {@link RunCompletionAggregator}; publish a daily notification
-     *       if this was the last expected posting for the company's scrape</li>
      * </ol>
      *
      * @param json the raw JSON message
@@ -89,12 +72,6 @@ public class NormalizedPostingPersistenceHandler {
      */
     public NormalizedJobPosting handle(String json) throws Exception {
         NormalizedJobPosting posting = objectMapper.readValue(json, NormalizedJobPosting.class);
-
-        PersistenceOutcome outcome = postingRepository.findById(posting.id(), posting.companyId())
-                .map(existing -> existing.contentHash().equals(posting.contentHash())
-                        ? PersistenceOutcome.UNCHANGED
-                        : PersistenceOutcome.UPDATED)
-                .orElse(PersistenceOutcome.NEW);
 
         postingRepository.upsert(posting);
 
@@ -119,10 +96,6 @@ public class NormalizedPostingPersistenceHandler {
         );
 
         observationRepository.upsert(observation);
-
-        runCompletionAggregator
-                .recordPersistedPosting(posting.companyId(), outcome)
-                .ifPresent(dailyNotificationPublisher::publish);
 
         return posting;
     }

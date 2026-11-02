@@ -9,8 +9,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * In-memory implementation of {@link SentNotificationGuard}.
  *
- * <p><b>Known limitation:</b> like {@link InMemoryRunCompletionAggregator}, this state lives only
- * in this process's heap and does not survive a host restart. It fully covers the realistic
+ * <p><b>Known limitation:</b> this state lives only in this process's heap and does not survive a
+ * host restart. It fully covers the realistic
  * within-process Kafka-redelivery scenario described on {@link SentNotificationGuard}, which is
  * the scenario this project has directly observed during local testing. A durable (Cosmos-backed)
  * guard is a natural Stage 7/8 hardening item for multi-instance deployments.</p>

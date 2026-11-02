@@ -24,7 +24,30 @@ public record NormalizedJobPosting(
         Instant lastSeenAt,
         boolean isActive,
         String contentHash,
-        int schemaVersion) {
+        int schemaVersion,
+        String url) {
+
+    /**
+     * Creates a posting without a public URL. Also matches the wire/document shape written
+     * before {@code url} was added; for those, {@code url} deserializes as {@code null}.
+     */
+    public NormalizedJobPosting(
+            String id,
+            String companyId,
+            String externalJobId,
+            String titleRaw,
+            String titleNormalized,
+            String jobLevel,
+            String location,
+            LocalDate datePosted,
+            Instant firstSeenAt,
+            Instant lastSeenAt,
+            boolean isActive,
+            String contentHash,
+            int schemaVersion) {
+        this(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel, location, datePosted,
+                firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion, null);
+    }
 
     public NormalizedJobPosting {
         Objects.requireNonNull(id, "id must not be null");

@@ -102,7 +102,8 @@ public class ScrapeCommandHandler {
                 result.searchPagesFetched(),
                 result.detailPagesFetched(),
                 result.blobPaths(),
-                result.errors()
+                result.errors(),
+                result.jobs()
         );
     }
 

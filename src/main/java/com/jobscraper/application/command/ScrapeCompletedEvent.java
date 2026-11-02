@@ -1,5 +1,7 @@
 package com.jobscraper.application.command;
 
+import com.jobscraper.scraper.api.ScrapedJob;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -18,9 +20,28 @@ public record ScrapeCompletedEvent(
         int searchPagesFetched,
         int detailPagesFetched,
         List<String> blobPaths,
-        List<String> errors) {
+        List<String> errors,
+        List<ScrapedJob> jobs) {
+
+    /**
+     * Creates an event without structured job data. Also matches the wire shape of messages
+     * produced before {@code jobs} was added; for those, {@code jobs} deserializes as empty.
+     */
+    public ScrapeCompletedEvent(
+            String runId,
+            String companyId,
+            Instant startedAt,
+            Instant completedAt,
+            int searchPagesFetched,
+            int detailPagesFetched,
+            List<String> blobPaths,
+            List<String> errors) {
+        this(runId, companyId, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
+                blobPaths, errors, List.of());
+    }
 
     public ScrapeCompletedEvent {
+        jobs = jobs == null ? List.of() : List.copyOf(jobs);
         Objects.requireNonNull(runId, "runId must not be null");
         Objects.requireNonNull(companyId, "companyId must not be null");
         Objects.requireNonNull(startedAt, "startedAt must not be null");

@@ -1,5 +1,6 @@
 package com.jobscraper.application.notification;
 
+import com.jobscraper.application.persistence.PersistenceOutcome;
 import com.jobscraper.configuration.ResendProperties;
 import com.resend.Resend;
 import com.resend.core.exception.ResendException;
@@ -69,6 +70,61 @@ class ResendDailyNotificationSenderTest {
         assertThat(request.getFrom()).contains("no-reply@example.com");
         assertThat(request.getTo().get(0)).isEqualTo("you@example.com");
         assertThat(request.getSubject()).contains("2026-08-23");
+    }
+
+    @Test
+    void buildRequestListsEveryScrapedPostingInTextAndHtml() {
+        ResendDailyNotificationSender sender = new ResendDailyNotificationSender(resendClient, properties);
+        CreateEmailOptions request = sender.buildRequest(buildEventWithPostings());
+
+        assertThat(request.getSubject())
+                .isEqualTo("Job Scraper Daily Summary - mckesson - 2026-08-23 (2 postings, 1 new)");
+
+        assertThat(request.getText())
+                .contains("New postings (1):")
+                .contains("Lead Data Architect | Irving, TX | posted 2026-08-14")
+                .contains("https://careers.mckesson.com/en/job/irving/lead/733/1")
+                .contains("Previously seen postings (1):")
+                .contains("Analyst | Remote");
+
+        assertThat(request.getHtml())
+                .contains("<a href=\"https://careers.mckesson.com/en/job/irving/lead/733/1\">Lead Data Architect</a>")
+                .contains("Irving, TX")
+                .contains("2026-08-14");
+    }
+
+    @Test
+    void buildRequestEscapesHtmlAndOnlyLinksHttpUrls() {
+        DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
+                "run-1", LocalDate.of(2026, 8, 23), 1, 1, 0, 0, List.of(), "mckesson",
+                List.of(new NotificationPosting("9", "<script>x</script> & Co", "A \"B\"", null,
+                        "javascript:alert(1)", PersistenceOutcome.NEW)));
+
+        String html = new ResendDailyNotificationSender(resendClient, properties).buildRequest(event).getHtml();
+
+        assertThat(html)
+                .contains("&lt;script&gt;x&lt;/script&gt; &amp; Co")
+                .contains("A &quot;B&quot;")
+                .doesNotContain("<script>")
+                .doesNotContain("javascript:");
+    }
+
+    private DailyNotificationRequestedEvent buildEventWithPostings() {
+        return new DailyNotificationRequestedEvent(
+                "run-2026-08-23",
+                LocalDate.of(2026, 8, 23),
+                1,
+                1,
+                0,
+                0,
+                List.of(),
+                "mckesson",
+                List.of(
+                        new NotificationPosting("1", "Lead Data Architect", "Irving, TX",
+                                LocalDate.of(2026, 8, 14), "https://careers.mckesson.com/en/job/irving/lead/733/1",
+                                PersistenceOutcome.NEW),
+                        new NotificationPosting("2", "Analyst", "Remote", null, null,
+                                PersistenceOutcome.UNCHANGED)));
     }
 
     private ResendProperties buildProperties() {

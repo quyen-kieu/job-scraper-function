@@ -54,28 +54,26 @@ public class ResendDailyNotificationSender implements DailyNotificationSender {
      */
     CreateEmailOptions buildRequest(DailyNotificationRequestedEvent event) {
         String from = properties.fromName() + " <" + properties.fromEmail() + ">";
-        String subject = properties.subjectPrefix() + " - " + event.summaryDate();
         return CreateEmailOptions.builder()
                 .from(from)
                 .to(properties.toEmail())
-                .subject(subject)
-                .text(buildBody(event))
+                .subject(buildSubject(event))
+                .text(DailyNotificationFormatter.toText(event))
+                .html(DailyNotificationFormatter.toHtml(event))
                 .build();
     }
 
-    private String buildBody(DailyNotificationRequestedEvent event) {
-        StringBuilder body = new StringBuilder();
-        body.append("Run ID: ").append(event.runId()).append(System.lineSeparator());
-        body.append("Summary date: ").append(event.summaryDate()).append(System.lineSeparator());
-        body.append("Companies processed: ").append(event.companiesProcessed()).append(System.lineSeparator());
-        body.append("New postings: ").append(event.newCount()).append(System.lineSeparator());
-        body.append("Changed postings: ").append(event.changedCount()).append(System.lineSeparator());
-        body.append("Inactive postings: ").append(event.inactiveCount()).append(System.lineSeparator());
-        body.append("Failures (").append(event.failures().size()).append("):").append(System.lineSeparator());
-        for (String failure : event.failures()) {
-            body.append("  - ").append(failure).append(System.lineSeparator());
+    private String buildSubject(DailyNotificationRequestedEvent event) {
+        StringBuilder subject = new StringBuilder(properties.subjectPrefix());
+        if (event.companyId() != null && !event.companyId().isBlank()) {
+            subject.append(" - ").append(event.companyId());
         }
-        return body.toString();
+        subject.append(" - ").append(event.summaryDate());
+        if (!event.postings().isEmpty()) {
+            subject.append(" (").append(event.postings().size()).append(" postings, ")
+                    .append(event.newCount()).append(" new)");
+        }
+        return subject.toString();
     }
 }
 

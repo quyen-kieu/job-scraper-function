@@ -3,11 +3,15 @@ package com.jobscraper.application.normalization;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobscraper.application.command.ScrapeCompletedEvent;
 import com.jobscraper.application.notification.DailyNotificationPublisher;
-import com.jobscraper.application.notification.RunCompletionAggregator;
+import com.jobscraper.application.notification.DailyNotificationRequestedEvent;
+import com.jobscraper.application.notification.NotificationPosting;
+import com.jobscraper.application.persistence.PersistenceOutcome;
 import com.jobscraper.domain.job.ContentHasher;
 import com.jobscraper.domain.job.JobLevelClassifier;
 import com.jobscraper.domain.job.NormalizedJobPosting;
 import com.jobscraper.domain.job.TitleNormalizer;
+import com.jobscraper.infrastructure.cosmos.JobPostingRepository;
+import com.jobscraper.scraper.api.ScrapedJob;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -15,30 +19,35 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Application service that deserializes a {@code job.scrape.completed} message,
- * derives normalized job postings, and publishes each to {@code job.postings.normalized}.
+ * Application service that deserializes a {@code job.scrape.completed} message, derives
+ * normalized job postings, publishes each to {@code job.postings.normalized}, and publishes one
+ * {@link DailyNotificationRequestedEvent} (listing every scraped posting) to
+ * {@code notifications.daily}.
  *
- * <p><b>Stage 5 scope:</b> normalization rules are now applied here so downstream metrics
- * aggregation can consume stable {@code titleNormalized} and {@code jobLevel} values without
- * duplicating rule logic in the metrics consumer.</p>
+ * <p><b>Posting source:</b> postings are built from the structured {@link ScrapedJob} list
+ * carried on the event (real title, location, date posted, URL). For messages produced before
+ * that field existed, it falls back to deriving IDs from {@code job-{externalJobId}.html} blob
+ * paths with placeholder titles.</p>
  *
- * <p>The external job ID for each posting is derived from the {@code job-{externalJobId}.html}
- * blob path naming convention established in Stage 3's {@code AzureBlobRawScrapeStorage}.
- * Detail-page content (title, location) is not yet fetched back from Blob Storage in this
- * stage, so those fields use placeholder values until the scraper's fetch/parse logic
- * (Stage 3's deferred {@code McKessonScraper} business logic) is completed.</p>
+ * <p><b>Why the notification is built here:</b> this is the only step that sees a company run's
+ * complete posting list in a single invocation. Each posting is classified as
+ * {@link PersistenceOutcome#NEW}/{@link PersistenceOutcome#UPDATED}/{@link PersistenceOutcome#UNCHANGED}
+ * by reading the currently stored document (before the persistence consumer overwrites it).
+ * This replaces the earlier in-memory run-completion aggregator, which could not work on Flex
+ * Consumption: the normalizer and persistence functions scale on separate instances and never
+ * shared heap state, so no notification was ever emitted.</p>
  *
  * <p><b>Path handling:</b> blob paths may use either {@code /}-separated Azure Blob keys or
- * OS-native absolute filesystem paths (e.g. Windows backslash paths from
- * {@code LocalFileRawScrapeStorage} in local-dev mode). Only the final path segment (the file
- * name) is matched against the {@code job-{externalJobId}.html} pattern; the file name is
- * extracted by splitting on both {@code /} and {@code \} separators first, so directory
- * components that happen to contain the literal substring {@code "job-"} (such as a project
- * folder named {@code job-scraper-function}) can never be mistaken for the job ID.</p>
+ * OS-native absolute filesystem paths; only the final path segment is matched.</p>
  */
 @Service
 public class ScrapeCompletedNormalizationHandler {
@@ -48,7 +57,7 @@ public class ScrapeCompletedNormalizationHandler {
 
     private final ObjectMapper objectMapper;
     private final NormalizedPostingPublisher publisher;
-    private final RunCompletionAggregator runCompletionAggregator;
+    private final JobPostingRepository postingRepository;
     private final DailyNotificationPublisher dailyNotificationPublisher;
     private final Clock clock;
 
@@ -56,20 +65,20 @@ public class ScrapeCompletedNormalizationHandler {
     public ScrapeCompletedNormalizationHandler(
             ObjectMapper objectMapper,
             NormalizedPostingPublisher publisher,
-            RunCompletionAggregator runCompletionAggregator,
+            JobPostingRepository postingRepository,
             DailyNotificationPublisher dailyNotificationPublisher) {
-        this(objectMapper, publisher, runCompletionAggregator, dailyNotificationPublisher, Clock.systemUTC());
+        this(objectMapper, publisher, postingRepository, dailyNotificationPublisher, Clock.systemUTC());
     }
 
     ScrapeCompletedNormalizationHandler(
             ObjectMapper objectMapper,
             NormalizedPostingPublisher publisher,
-            RunCompletionAggregator runCompletionAggregator,
+            JobPostingRepository postingRepository,
             DailyNotificationPublisher dailyNotificationPublisher,
             Clock clock) {
         this.objectMapper = objectMapper;
         this.publisher = publisher;
-        this.runCompletionAggregator = runCompletionAggregator;
+        this.postingRepository = postingRepository;
         this.dailyNotificationPublisher = dailyNotificationPublisher;
         this.clock = clock;
     }
@@ -77,40 +86,94 @@ public class ScrapeCompletedNormalizationHandler {
     /**
      * Handles a single {@code job.scrape.completed} event.
      *
-     * <p>Steps:
      * <ol>
      *   <li>Deserialize JSON into {@link ScrapeCompletedEvent}</li>
-     *   <li>Derive one {@link NormalizedJobPosting} per detail-page blob path discovered</li>
-     *   <li>Publish each posting via {@link NormalizedPostingPublisher}</li>
-     *   <li>Register the expected posting count with {@link RunCompletionAggregator} (Stage 6),
-     *       so a daily notification email can be sent once {@link com.jobscraper.function.PersistenceConsumerFunction}
-     *       has persisted every posting from this scrape</li>
+     *   <li>Build one {@link NormalizedJobPosting} per scraped job</li>
+     *   <li>Classify each against the stored document, then publish it</li>
+     *   <li>Publish one {@link DailyNotificationRequestedEvent} listing all postings</li>
      * </ol>
      *
      * @param json the raw JSON message
      * @return the number of postings published
-     * @throws Exception any deserialization or publishing failure (triggers redelivery)
+     * @throws Exception any deserialization, lookup, or publishing failure (triggers redelivery)
      */
     public int handle(String json) throws Exception {
         ScrapeCompletedEvent event = objectMapper.readValue(json, ScrapeCompletedEvent.class);
+        Instant now = Instant.now(clock);
 
-        int publishedCount = 0;
-        for (String blobPath : event.blobPaths()) {
-            String externalJobId = extractExternalJobId(blobPath);
-            if (externalJobId == null) {
-                continue;
-            }
+        List<NotificationPosting> notificationPostings = new ArrayList<>();
+        int newCount = 0;
+        int changedCount = 0;
 
-            NormalizedJobPosting posting = toNormalizedPosting(event, externalJobId);
+        for (ScrapedJob job : resolveJobs(event)) {
+            String id = NormalizedJobPosting.buildId(event.companyId(), job.externalJobId());
+            Optional<NormalizedJobPosting> existing = postingRepository.findById(id, event.companyId());
+
+            NormalizedJobPosting posting = toNormalizedPosting(event.companyId(), job, existing, now);
+            PersistenceOutcome outcome = classify(posting, existing);
+
             publisher.publish(posting);
-            publishedCount++;
+
+            if (outcome == PersistenceOutcome.NEW) {
+                newCount++;
+            } else if (outcome == PersistenceOutcome.UPDATED) {
+                changedCount++;
+            }
+            notificationPostings.add(new NotificationPosting(
+                    job.externalJobId(), job.title(), job.location(), job.datePosted(), job.url(), outcome));
         }
 
-        runCompletionAggregator
-                .registerExpectedCompany(event.runId(), event.companyId(), publishedCount, event.errors())
-                .ifPresent(dailyNotificationPublisher::publish);
+        dailyNotificationPublisher.publish(new DailyNotificationRequestedEvent(
+                event.runId(),
+                LocalDate.now(clock.withZone(ZoneOffset.UTC)),
+                1,
+                newCount,
+                changedCount,
+                // Detecting postings that disappeared (went inactive) needs a reconciliation step
+                // against previously-active postings that is not implemented yet.
+                0,
+                event.errors(),
+                event.companyId(),
+                notificationPostings
+        ));
 
-        return publishedCount;
+        return notificationPostings.size();
+    }
+
+    /**
+     * Returns the structured job list, or (for legacy messages without it) jobs derived from
+     * detail-page blob paths with placeholder titles. De-duplicated by external job ID.
+     */
+    private static List<ScrapedJob> resolveJobs(ScrapeCompletedEvent event) {
+        Map<String, ScrapedJob> byId = new LinkedHashMap<>();
+        if (!event.jobs().isEmpty()) {
+            for (ScrapedJob job : event.jobs()) {
+                byId.putIfAbsent(job.externalJobId(), job);
+            }
+            return List.copyOf(byId.values());
+        }
+
+        for (String blobPath : event.blobPaths()) {
+            String externalJobId = extractExternalJobId(blobPath);
+            if (externalJobId != null) {
+                byId.putIfAbsent(externalJobId, new ScrapedJob(
+                        externalJobId,
+                        "Unknown title (pending detail-page fetch): " + externalJobId,
+                        "Unknown",
+                        null,
+                        null));
+            }
+        }
+        return List.copyOf(byId.values());
+    }
+
+    private static PersistenceOutcome classify(
+            NormalizedJobPosting posting, Optional<NormalizedJobPosting> existing) {
+        return existing
+                .map(prior -> prior.contentHash().equals(posting.contentHash())
+                        ? PersistenceOutcome.UNCHANGED
+                        : PersistenceOutcome.UPDATED)
+                .orElse(PersistenceOutcome.NEW);
     }
 
     /**
@@ -127,30 +190,29 @@ public class ScrapeCompletedNormalizationHandler {
         return matcher.matches() ? matcher.group(1) : null;
     }
 
+    private NormalizedJobPosting toNormalizedPosting(
+            String companyId, ScrapedJob job, Optional<NormalizedJobPosting> existing, Instant now) {
+        LocalDate datePosted = job.datePosted() != null
+                ? job.datePosted()
+                : LocalDate.now(clock.withZone(ZoneOffset.UTC));
+        Instant firstSeenAt = existing.map(NormalizedJobPosting::firstSeenAt).orElse(now);
 
-    private NormalizedJobPosting toNormalizedPosting(ScrapeCompletedEvent event, String externalJobId) {
-        Instant now = Instant.now(clock);
-        LocalDate datePosted = LocalDate.now(clock.withZone(ZoneOffset.UTC));
-
-        // Title extraction is still placeholder until detail HTML parsing is completed.
-         String titleRaw = "Unknown title (pending detail-page fetch): " + externalJobId;
-         String titleNormalized = TitleNormalizer.normalize(titleRaw);
-         String jobLevel = JobLevelClassifier.classify(titleRaw);
-
-         return new NormalizedJobPosting(
-                 NormalizedJobPosting.buildId(event.companyId(), externalJobId),
-                 event.companyId(),
-                 externalJobId,
-                 titleRaw,
-                 titleNormalized,
-                 jobLevel,
-                 "Unknown",
-                 datePosted,
-                 now,
-                 now,
-                 true,
-                 ContentHasher.sha256(titleRaw),
-                 SCHEMA_VERSION
-         );
+        return new NormalizedJobPosting(
+                NormalizedJobPosting.buildId(companyId, job.externalJobId()),
+                companyId,
+                job.externalJobId(),
+                job.title(),
+                TitleNormalizer.normalize(job.title()),
+                JobLevelClassifier.classify(job.title()),
+                job.location(),
+                datePosted,
+                firstSeenAt,
+                now,
+                true,
+                ContentHasher.sha256(job.title() + "|" + job.location() + "|" + job.datePosted()),
+                SCHEMA_VERSION,
+                job.url()
+        );
     }
 }
+

@@ -7,11 +7,15 @@ import com.jobscraper.scraper.api.CompanyScraper;
 import com.jobscraper.scraper.api.JobSearchHttpClient;
 import com.jobscraper.scraper.api.ScrapeContext;
 import com.jobscraper.scraper.api.ScrapeResult;
+import com.jobscraper.scraper.api.ScrapedJob;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
 import java.net.http.HttpResponse;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -36,6 +40,7 @@ import java.util.Set;
 public class McKessonScraper implements CompanyScraper {
 
     private static final String BASE_URL = "https://careers.mckesson.com";
+    private static final DateTimeFormatter DATE_POSTED_FORMAT = DateTimeFormatter.ofPattern("M/d/yyyy");
     private static final String SEARCH_PATH = "/en/search-jobs/results";
     private static final String SEARCH_QUERY_TEMPLATE =
             "ActiveFacetID=0&CurrentPage=%d&RecordsPerPage=15&Distance=50&RadiusUnitType=0"
@@ -87,8 +92,25 @@ public class McKessonScraper implements CompanyScraper {
                 searchPagesFetched,
                 detailPagesFetched,
                 blobPaths,
-                errors
+                errors,
+                allJobs.stream().map(McKessonScraper::toScrapedJob).toList()
         );
+    }
+
+    /**
+     * Maps a search-results entry to the company-agnostic {@link ScrapedJob}. The date is parsed
+     * from the site's {@code MM/dd/yyyy} display format; unparseable values become {@code null}
+     * rather than failing the run.
+     */
+    static ScrapedJob toScrapedJob(McKessonJobSummary job) {
+        LocalDate datePosted;
+        try {
+            datePosted = LocalDate.parse(job.datePostedRaw().trim(), DATE_POSTED_FORMAT);
+        } catch (DateTimeParseException e) {
+            datePosted = null;
+        }
+        String url = job.detailPath().isBlank() ? null : BASE_URL + job.detailPath();
+        return new ScrapedJob(job.externalJobId(), job.titleRaw(), job.location(), datePosted, url);
     }
 
     private int fetchSearchPages(
