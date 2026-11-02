@@ -73,11 +73,14 @@ locals {
     }
     normalizer = {
       display_name = "sa-job-scraper-normalizer"
-      description  = "Normalizer consumer (job.scrape.completed) / producer (job.postings.normalized, notifications.daily)"
+      # Descriptions are intentionally left as originally deployed: changing them is an in-place
+      # service-account update, which the CI Confluent Cloud API key is not authorized for (403).
+      # Effective permissions are defined by acl_entries below, not by these descriptions.
+      description  = "Normalizer consumer (job.scrape.completed) / producer (job.postings.normalized)"
     }
     persistence = {
       display_name = "sa-job-scraper-persistence"
-      description  = "Persistence consumer (job.postings.normalized)"
+      description  = "Persistence consumer (job.postings.normalized) / producer (notifications.daily)"
     }
     metrics = {
       display_name = "sa-job-scraper-metrics"
