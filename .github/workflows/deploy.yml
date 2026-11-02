@@ -467,10 +467,25 @@ jobs:
           TF_VAR_kafka_api_secret: ${{ secrets.KAFKA_CLIENT_API_SECRET }}
           TF_VAR_confluent_environment_id: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
           TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
+      # A saved plan embeds every input variable (incl. Confluent API secrets) and a full state
+      # snapshot (incl. service-account API key secrets) in plaintext, and artifacts of a public
+      # repo are downloadable by any signed-in GitHub user. Only an encrypted plan is uploaded.
+      - name: Encrypt plan for artifact handoff
+        env:
+          TFPLAN_ENCRYPTION_KEY: ${{ secrets.TFPLAN_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TFPLAN_ENCRYPTION_KEY}" ]; then
+            echo "::error::Secret TFPLAN_ENCRYPTION_KEY is not set; refusing to upload a plaintext plan."
+            exit 1
+          fi
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in tfplan -out tfplan.enc -pass env:TFPLAN_ENCRYPTION_KEY
+          rm -f tfplan
       - uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ needs.setup.outputs.bicep_env }}
-          path: infra/confluent/tfplan
+          path: infra/confluent/tfplan.enc
           retention-days: 1
 
   # README item 7. `environment:` here is the approval-gate (README item 6) — GitHub blocks this
@@ -550,6 +565,14 @@ jobs:
         with:
           name: tfplan-${{ needs.setup.outputs.bicep_env }}
           path: infra/confluent
+      - name: Decrypt plan
+        env:
+          TFPLAN_ENCRYPTION_KEY: ${{ secrets.TFPLAN_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in tfplan.enc -out tfplan -pass env:TFPLAN_ENCRYPTION_KEY
+          rm -f tfplan.enc
       - name: terraform init (real backend)
         run: |
           terraform init \
