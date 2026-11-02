@@ -240,6 +240,14 @@ jobs:
       ARM_USE_OIDC: true
     steps:
       - uses: actions/checkout@v4
+      # Must run before any step that can print Confluent IDs (public repo => public logs).
+      - name: Mask Confluent identifiers in logs
+        run: bash ./ci/mask-confluent-ids.sh
+        env:
+          CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          CONFLUENT_ENVIRONMENT_ID: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
+          CONFLUENT_CLUSTER_ID: ${{ vars.CONFLUENT_CLUSTER_ID }}
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -527,6 +535,14 @@ jobs:
       TF_VAR_confluent_cluster_id: ${{ vars.CONFLUENT_CLUSTER_ID }}
     steps:
       - uses: actions/checkout@v4
+      # Must run before terraform apply prints service-account / API key IDs.
+      - name: Mask Confluent identifiers in logs
+        run: bash ./ci/mask-confluent-ids.sh
+        env:
+          CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          CONFLUENT_ENVIRONMENT_ID: ${{ vars.CONFLUENT_ENVIRONMENT_ID }}
+          CONFLUENT_CLUSTER_ID: ${{ vars.CONFLUENT_CLUSTER_ID }}
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7.5"
