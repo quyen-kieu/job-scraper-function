@@ -115,6 +115,28 @@ class ResendDailyNotificationSenderTest {
     }
 
     @Test
+    void buildRequestUsesFirstCitizensDisplayName() {
+        DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
+                "run-first-citizens", LocalDate.of(2026, 11, 22), 1, 0, 0, 0, List.of(),
+                "first-citizens", List.of());
+        CreateEmailOptions request = new ResendDailyNotificationSender(resendClient, properties).buildRequest(event);
+        assertThat(request.getSubject()).contains("First Citizens Bank");
+        assertThat(request.getText()).startsWith("Company: First Citizens Bank");
+        assertThat(request.getHtml()).contains("Job postings &ndash; First Citizens Bank");
+    }
+
+    @Test
+    void buildRequestUsesFrostBankDisplayName() {
+        DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
+                "run-frost", LocalDate.of(2026, 11, 22), 1, 0, 0, 0, List.of(),
+                "frost-bank", List.of());
+        CreateEmailOptions request = new ResendDailyNotificationSender(resendClient, properties).buildRequest(event);
+        assertThat(request.getSubject()).contains("Frost Bank");
+        assertThat(request.getText()).startsWith("Company: Frost Bank");
+        assertThat(request.getHtml()).contains("Job postings &ndash; Frost Bank");
+    }
+
+    @Test
     void buildRequestEscapesHtmlAndOnlyLinksHttpUrls() {
         DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
                 "run-1", LocalDate.of(2026, 8, 23), 1, 1, 0, 0, List.of(), "mckesson",
@@ -172,5 +194,3 @@ class ResendDailyNotificationSenderTest {
                 List.of("oracle timeout"));
     }
 }
-
-

@@ -1,0 +1,25 @@
+{
+  "totalCount": 11,
+  "jobs": [
+    {
+      "data": {
+        "slug": "34381",
+        "req_id": "34381",
+        "title": "MuleSoft Engineer II",
+        "short_location": "Raleigh, North Carolina",
+        "posted_date": "2026-11-16T19:46:00+0000",
+        "description": ""
+      }
+    },
+    {
+      "data": {
+        "slug": "36358",
+        "req_id": "36358",
+        "title": "Software Engineer Consultant",
+        "full_location": "Austin, Texas",
+        "posted_date": "2026-11-06T20:33:00+0000",
+        "description": "<p>Salary range: $110,000 - $150,000.</p>"
+      }
+    }
+  ]
+}

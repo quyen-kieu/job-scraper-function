@@ -1,0 +1,27 @@
+{
+  "totalCount": 11,
+  "jobs": [
+    {
+      "data": {
+        "slug": "36571",
+        "req_id": "36571",
+        "title": "Enterprise Resilience Analyst (Remote)",
+        "full_location": "Raleigh, North Carolina; North Carolina, United States",
+        "short_location": "Raleigh, North Carolina",
+        "posted_date": "2026-11-19T20:26:00+0000",
+        "description": "<p>The base pay is generally between $95,000 and $125,000.</p>"
+      }
+    },
+    {
+      "data": {
+        "slug": "34381",
+        "req_id": "34381",
+        "title": "MuleSoft Engineer II",
+        "full_location": null,
+        "short_location": "Raleigh, North Carolina",
+        "posted_date": "2026-11-16T19:46:00+0000",
+        "description": "<p>Competitive benefits.</p>"
+      }
+    }
+  ]
+}

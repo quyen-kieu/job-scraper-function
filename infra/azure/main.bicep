@@ -139,6 +139,12 @@ var appSettings = [
   // (see GmFinancialScraperConfiguration). Each company gets its own daily summary email.
   { name: 'JOB_SCRAPER_COMPANIES_1_ID', value: 'gm-financial' }
   { name: 'JOB_SCRAPER_COMPANIES_1_ENABLED', value: 'true' }
+  // First Citizens Bank: Information Technology jobs, newest first.
+  { name: 'JOB_SCRAPER_COMPANIES_2_ID', value: 'first-citizens' }
+  { name: 'JOB_SCRAPER_COMPANIES_2_ENABLED', value: 'true' }
+  // Frost Bank: Technology & Digital category.
+  { name: 'JOB_SCRAPER_COMPANIES_3_ID', value: 'frost-bank' }
+  { name: 'JOB_SCRAPER_COMPANIES_3_ENABLED', value: 'true' }
   { name: 'JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN', value: '3' }
   { name: 'JOB_SCRAPER_MAX_DETAIL_PAGES_PER_RUN', value: '10' }
   { name: 'JOB_SCRAPER_REQUEST_DELAY', value: 'PT0.3S' }

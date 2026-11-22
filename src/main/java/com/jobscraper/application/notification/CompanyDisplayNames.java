@@ -10,7 +10,9 @@ final class CompanyDisplayNames {
 
     private static final Map<String, String> NAMES = Map.of(
             "mckesson", "McKesson",
-            "gm-financial", "GM Financial");
+            "gm-financial", "GM Financial",
+            "first-citizens", "First Citizens Bank",
+            "frost-bank", "Frost Bank");
 
     private CompanyDisplayNames() {
     }
@@ -28,4 +30,3 @@ final class CompanyDisplayNames {
         return NAMES.getOrDefault(companyId, companyId);
     }
 }
-

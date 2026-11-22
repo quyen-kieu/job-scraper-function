@@ -649,6 +649,32 @@ guard is keyed by `runId:companyId` because the daily timer runs every company u
 Real fixtures: `src/test/resources/fixtures/gmfinancial/` (`search-results-page1.json`,
 `job-detail-with-salary.json`, `job-detail-without-salary.json`).
 
+### First Citizens Bank site reference
+
+Company ID `first-citizens` searches First Citizens Bank's
+[Information Technology jobs](https://firstcitizens.jibeapply.com/jobs?page=1&categories=Information%20Technology&sortBy=posted_date&descending=true),
+newest first. The scraper calls the site's anonymous `/api/jobs` endpoint with the same filters,
+fetching 10 jobs per page up to `JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN`. Job descriptions and salary
+information are included in the search responses, so no separate detail requests are made and
+`JOB_SCRAPER_MAX_DETAIL_PAGES_PER_RUN` does not apply. Raw search responses and a run summary are
+stored as for other companies. Add `first-citizens` to an existing local configuration to enable it,
+or use the supplied sample settings; the Azure deployment enables it by default.
+Once enabled, trigger it with `POST /api/scrape/trigger?companyId=first-citizens`.
+
+### Frost Bank site reference
+
+Company ID `frost-bank` scrapes Frost Bank's
+[Technology & Digital category](https://careers.frostbank.com/us/en/c/technology-digital-jobs).
+The category page embeds search results in `phApp.ddo.eagerLoadRefineSearch`; `?from={offset}`
+paginates in groups of 10, in the site's default order. The scraper stores the embedded search JSON
+and fetches public job detail pages for salary extraction, subject to the configured search-page and
+detail-page caps and request delay. The default search-page cap of three can omit later listings;
+increase `JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN` to include more.
+
+Add `frost-bank` to an existing local configuration or use the supplied sample settings; the Azure
+deployment enables it by default. Once enabled, trigger it with
+`POST /api/scrape/trigger?companyId=frost-bank`.
+
 ### Local file output (pre-Blob/Cosmos)
 
 Before Blob Storage and Cosmos DB are wired up for McKesson, raw scrape output and a structured
@@ -1482,6 +1508,10 @@ Use the following skeleton. Replace the placeholder values with your workstation
     "JOB_SCRAPER_COMPANIES_0_ENABLED": "true",
     "JOB_SCRAPER_COMPANIES_1_ID": "gm-financial",
     "JOB_SCRAPER_COMPANIES_1_ENABLED": "true",
+    "JOB_SCRAPER_COMPANIES_2_ID": "first-citizens",
+    "JOB_SCRAPER_COMPANIES_2_ENABLED": "true",
+    "JOB_SCRAPER_COMPANIES_3_ID": "frost-bank",
+    "JOB_SCRAPER_COMPANIES_3_ENABLED": "true",
     "JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN": "3",
     "JOB_SCRAPER_MAX_DETAIL_PAGES_PER_RUN": "10",
     "JOB_SCRAPER_REQUEST_DELAY": "PT0.3S",

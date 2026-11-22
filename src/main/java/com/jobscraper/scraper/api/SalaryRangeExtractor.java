@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
  * description text itself. Resolution order:</p>
  * <ol>
  *   <li>a {@code $X - $Y} range that follows a "pay range" / "salary range" label;</li>
- *   <li>the first {@code $X - $Y} range anywhere in the description;</li>
+ *   <li>the first {@code between $X and $Y} or {@code $X - $Y} range in the description;</li>
  *   <li>the first single rate with an explicit unit ({@code $17.40 per hour}, {@code $22.25/hr}),
  *       skipping amounts that describe incentives, bonuses, or shift differentials.</li>
  * </ol>
@@ -32,6 +32,8 @@ public final class SalaryRangeExtractor {
 
     private static final Pattern LABELLED_RANGE = Pattern.compile(
             "(?:pay|salary|compensation|wage)\\s+range[^$]{0,80}?(" + RANGE + ")", Pattern.CASE_INSENSITIVE);
+    private static final Pattern BETWEEN_RANGE = Pattern.compile(
+            "\\bbetween\\s+(" + AMOUNT + "\\s+and\\s+" + AMOUNT + UNIT + "?)", Pattern.CASE_INSENSITIVE);
     private static final Pattern ANY_RANGE = Pattern.compile(RANGE, Pattern.CASE_INSENSITIVE);
     private static final Pattern SINGLE_RATE = Pattern.compile(AMOUNT + UNIT, Pattern.CASE_INSENSITIVE);
     private static final Pattern NON_BASE_PAY_BEFORE = Pattern.compile(
@@ -76,8 +78,14 @@ public final class SalaryRangeExtractor {
             return Optional.of(normalize(labelled.group(1)));
         }
 
+        Matcher between = BETWEEN_RANGE.matcher(text);
         Matcher range = ANY_RANGE.matcher(text);
-        if (range.find()) {
+        boolean hasBetween = between.find();
+        boolean hasRange = range.find();
+        if (hasBetween && (!hasRange || between.start(1) < range.start())) {
+            return Optional.of(normalize(between.group(1)));
+        }
+        if (hasRange) {
             return Optional.of(normalize(range.group()));
         }
 
@@ -109,7 +117,4 @@ public final class SalaryRangeExtractor {
         return value.replace('\u00a0', ' ').replaceAll("\\s+", " ").trim();
     }
 }
-
-
-
 

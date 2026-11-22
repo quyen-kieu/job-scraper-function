@@ -40,6 +40,18 @@ class SalaryRangeExtractorTest {
     }
 
     @Test
+    void shouldExtractBetweenAndSalaryRange() {
+        assertThat(SalaryRangeExtractor.extractFromText("Base pay is generally between $95,000 and $125,000."))
+                .contains("$95,000 and $125,000");
+        assertThat(SalaryRangeExtractor.extractFromText("A bonus of $5,000 and $10,000 is available."))
+                .isEmpty();
+        assertThat(SalaryRangeExtractor.extractFromText("$100 - $200; between $300 and $400"))
+                .contains("$100 - $200");
+        assertThat(SalaryRangeExtractor.extractFromText("between $100 and $200; $300 - $400"))
+                .contains("$100 and $200");
+    }
+
+    @Test
     void shouldExtractHourlyRateAndSkipShiftDifferentialAndIncentive() {
         String text = "Shift: Day. $17.40 per hour, Overnight $1.50/hr. Top performers earn up to about "
                 + "$1.75/hour in incentive pay.";
@@ -61,4 +73,3 @@ class SalaryRangeExtractorTest {
         assertThat(SalaryRangeExtractor.extract("")).isEmpty();
     }
 }
-
