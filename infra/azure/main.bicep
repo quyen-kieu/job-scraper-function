@@ -52,6 +52,15 @@ param resendSubjectPrefix string = 'Job Scraper Daily Summary'
 @description('Cron expression for the daily scrape trigger.')
 param jobScraperDailyCron string = '0 0 3 * * *'
 
+@description('McKesson Workday state/province facet ID.')
+param mckessonStateFacetId string = 'fc77e3a1ab36487f9646d14f7242dd77'
+
+@description('McKesson Workday job family group facet ID.')
+param mckessonJobFamilyFacetId string = '29ce91b0412201aafb7bf4bd4f169117'
+
+@description('McKesson Workday country facet ID.')
+param mckessonCountryFacetId string = 'bc33aa3152ec42d4995f4791a106ed09'
+
 var regionCode = location == 'centralus' ? 'cus' : take(replace(toLower(location), ' ', ''), 3)
 var storageAccountName = toLower('${take(replace(baseName, '-', ''), 10)}st${environmentName}${regionCode}')
 var cosmosAccountName = toLower('${take(replace(baseName, '-', ''), 14)}-cosmos-${environmentName}-${regionCode}')
@@ -135,6 +144,9 @@ var appSettings = [
   { name: 'JOB_SCRAPER_ENABLED', value: 'true' }
   { name: 'JOB_SCRAPER_COMPANIES_0_ID', value: 'mckesson' }
   { name: 'JOB_SCRAPER_COMPANIES_0_ENABLED', value: 'true' }
+  { name: 'JOB_SCRAPER_MCKESSON_STATE_FACET_ID', value: mckessonStateFacetId }
+  { name: 'JOB_SCRAPER_MCKESSON_JOB_FAMILY_FACET_ID', value: mckessonJobFamilyFacetId }
+  { name: 'JOB_SCRAPER_MCKESSON_COUNTRY_FACET_ID', value: mckessonCountryFacetId }
   // GM Financial: "software development" search on its Oracle Recruiting Cloud site
   // (see GmFinancialScraperConfiguration). Each company gets its own daily summary email.
   { name: 'JOB_SCRAPER_COMPANIES_1_ID', value: 'gm-financial' }
@@ -146,7 +158,6 @@ var appSettings = [
   { name: 'JOB_SCRAPER_COMPANIES_3_ID', value: 'frost-bank' }
   { name: 'JOB_SCRAPER_COMPANIES_3_ENABLED', value: 'true' }
   { name: 'JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN', value: '3' }
-  { name: 'JOB_SCRAPER_MAX_DETAIL_PAGES_PER_RUN', value: '10' }
   { name: 'JOB_SCRAPER_REQUEST_DELAY', value: 'PT0.3S' }
   { name: 'RAW_STORAGE_MODE', value: 'blob' }
   { name: 'KAFKA_ENABLED', value: 'true' }

@@ -36,8 +36,7 @@ public final class LocalMcKessonScrapeRunner {
 
     public static void main(String[] args) throws Exception {
         JobScraperProperties scraperProperties = new JobScraperProperties();
-        // Defaults (max 3 search pages, 10 detail pages, 300ms delay) are intentionally
-        // conservative for a first live run against a real third-party site.
+        // Defaults limit search pages and add a delay between requests.
 
         RawStorageProperties storageProperties = new RawStorageProperties();
         storageProperties.setMode("file");
@@ -78,5 +77,4 @@ public final class LocalMcKessonScrapeRunner {
         }
     }
 }
-
 

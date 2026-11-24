@@ -4,9 +4,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -68,6 +70,21 @@ class JobScraperPropertiesTest {
 
         assertThat(properties.enabledCompanies()).extracting(JobScraperProperties.CompanyProperties::id)
                 .containsExactly("mckesson");
+    }
+
+    @Test
+    void bindsMcKessonFacetIdsFromEnvironmentSettings() {
+        contextRunner.withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                new SystemEnvironmentPropertySource("test-env", Map.of(
+                        "JOB_SCRAPER_MCKESSON_STATE_FACET_ID", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "JOB_SCRAPER_MCKESSON_JOB_FAMILY_FACET_ID", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "JOB_SCRAPER_MCKESSON_COUNTRY_FACET_ID", "cccccccccccccccccccccccccccccccc"))))
+                .run(context -> {
+                    JobScraperProperties properties = context.getBean(JobScraperProperties.class);
+                    assertThat(properties.getMckessonStateFacetId()).isEqualTo("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+                    assertThat(properties.getMckessonJobFamilyFacetId()).isEqualTo("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+                    assertThat(properties.getMckessonCountryFacetId()).isEqualTo("cccccccccccccccccccccccccccccccc");
+                });
     }
 
     @Configuration(proxyBeanMethods = false)

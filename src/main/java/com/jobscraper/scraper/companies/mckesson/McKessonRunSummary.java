@@ -1,5 +1,7 @@
 package com.jobscraper.scraper.companies.mckesson;
 
+import com.jobscraper.scraper.api.ScrapedJob;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -8,8 +10,7 @@ import java.util.Objects;
  * Structured run-summary content written via {@code RawScrapeStorage.writeRunSummary}
  * for one McKesson scrape run.
  *
- * <p>This is the primary human-readable "result file" produced by a scrape run before
- * Blob Storage/Cosmos DB persistence is wired up.</p>
+ * <p>This is the human-readable result file written alongside raw search and detail responses.</p>
  */
 public record McKessonRunSummary(
         String runId,
@@ -18,7 +19,7 @@ public record McKessonRunSummary(
         Instant completedAt,
         int searchPagesFetched,
         int detailPagesFetched,
-        List<McKessonJobSummary> jobs,
+        List<ScrapedJob> jobs,
         List<String> errors) {
 
     public McKessonRunSummary {
@@ -28,4 +29,3 @@ public record McKessonRunSummary(
         errors = List.copyOf(errors);
     }
 }
-

@@ -25,7 +25,17 @@ public record NormalizedJobPosting(
         boolean isActive,
         String contentHash,
         int schemaVersion,
-        String url) {
+        String url,
+        String description,
+        String descriptionPath) {
+
+    public NormalizedJobPosting(String id, String companyId, String externalJobId, String titleRaw,
+                                String titleNormalized, String jobLevel, String location, LocalDate datePosted,
+                                Instant firstSeenAt, Instant lastSeenAt, boolean isActive, String contentHash,
+                                int schemaVersion, String url) {
+        this(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel, location, datePosted,
+                firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion, url, null, null);
+    }
 
     /**
      * Creates a posting without a public URL. Also matches the wire/document shape written
@@ -46,7 +56,13 @@ public record NormalizedJobPosting(
             String contentHash,
             int schemaVersion) {
         this(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel, location, datePosted,
-                firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion, null);
+                firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion, null, null, null);
+    }
+
+    public NormalizedJobPosting withDescription(String text) {
+        return new NormalizedJobPosting(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel,
+                location, datePosted, firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion,
+                url, text, null);
     }
 
     public NormalizedJobPosting {

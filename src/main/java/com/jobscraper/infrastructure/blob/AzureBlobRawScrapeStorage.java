@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Implementation of {@link RawScrapeStorage} using Azure Blob Storage.
@@ -49,6 +50,29 @@ public class AzureBlobRawScrapeStorage implements RawScrapeStorage {
     }
 
     @Override
+    public String writeDescription(String companyId, String runId, String externalJobId, String text) {
+        DescriptionStoragePaths.validateCompany(companyId);
+        DescriptionStoragePaths.validateRunId(runId);
+        String path = String.format("raw/%s/%s/%s/%s", companyId, LocalDate.now().format(DATE_FORMATTER),
+                runId, DescriptionStoragePaths.fileName(externalJobId));
+        byte[] data = text.getBytes(StandardCharsets.UTF_8);
+        containerClient.getBlobClient(path).upload(new java.io.ByteArrayInputStream(data), data.length, true);
+        return path;
+    }
+
+    @Override
+    public String readDescription(String companyId, String externalJobId, String path) {
+        DescriptionStoragePaths.validateCompany(companyId);
+        String prefix = "raw/" + companyId + "/";
+        String suffix = "/" + DescriptionStoragePaths.fileName(externalJobId);
+        if (path == null || !path.startsWith(prefix) || !path.endsWith(suffix)
+                || path.contains("..") || path.contains("\\")) {
+            throw new IllegalArgumentException("Invalid description blob path");
+        }
+        return containerClient.getBlobClient(path).downloadContent().toString();
+    }
+
+    @Override
     public String writeRunSummary(String companyId, String runId, String json) throws Exception {
         String blobPath = buildRunSummaryPath(companyId, runId);
         byte[] data = json.getBytes();
@@ -74,5 +98,3 @@ public class AzureBlobRawScrapeStorage implements RawScrapeStorage {
         return String.format("normalized/%s/%s/%s/run-summary.json", companyId, datePart, runId);
     }
 }
-
-

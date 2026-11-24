@@ -27,9 +27,8 @@ import java.util.Objects;
  * Cloud (Oracle HCM Candidate Experience). Each company is registered as its own bean with its own
  * {@link OracleRecruitingSite}, e.g. {@code GmFinancialScraperConfiguration}.
  *
- * <p>Pages through the keyword search newest-first, then fetches up to
- * {@link JobScraperProperties#maxDetailPagesPerRun()} job details to read the salary range from the
- * description. Raw responses are written via {@link RawScrapeStorage}. Per-run caps and
+ * <p>Pages through the keyword search newest-first, then fetches each discovered job's details.
+ * Raw responses are written via {@link RawScrapeStorage}. Search-page caps and
  * {@link JobScraperProperties#requestDelay()} keep traffic to the live site polite, matching
  * {@code McKessonScraper}.</p>
  */
@@ -70,9 +69,11 @@ public class OracleRecruitingScraper implements CompanyScraper {
         List<String> errors = new ArrayList<>();
         Map<String, OracleRequisitionSummary> requisitionsById = new LinkedHashMap<>();
         Map<String, String> salaryRangesById = new HashMap<>();
+        Map<String, String> descriptionPathsById = new HashMap<>();
 
         int searchPagesFetched = fetchSearchPages(context, blobPaths, errors, requisitionsById);
-        int detailPagesFetched = fetchDetails(context, blobPaths, errors, requisitionsById, salaryRangesById);
+        int detailPagesFetched = fetchDetails(context, blobPaths, errors, requisitionsById,
+                salaryRangesById, descriptionPathsById);
 
         Instant completedAt = Instant.now();
         writeRunSummary(context, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
@@ -88,7 +89,8 @@ public class OracleRecruitingScraper implements CompanyScraper {
                 blobPaths,
                 errors,
                 requisitionsById.values().stream()
-                        .map(requisition -> toScrapedJob(requisition, salaryRangesById.get(requisition.id())))
+                        .map(requisition -> toScrapedJob(requisition, salaryRangesById.get(requisition.id()))
+                                .withDescriptionPath(descriptionPathsById.get(requisition.id())))
                         .toList());
     }
 
@@ -111,7 +113,7 @@ public class OracleRecruitingScraper implements CompanyScraper {
             ScrapeContext context,
             List<String> blobPaths,
             List<String> errors,
-            Map<String, OracleRequisitionSummary> requisitionsById) {
+            Map<String, OracleRequisitionSummary> requisitionsById) throws InterruptedException {
         int searchPagesFetched = 0;
         int offset = 0;
         int pageCap = properties.maxSearchPagesPerRun();
@@ -121,6 +123,9 @@ public class OracleRecruitingScraper implements CompanyScraper {
             String body;
             try {
                 body = getBody(site.searchUri(offset, PAGE_SIZE));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
             } catch (Exception e) {
                 errors.add("Search page " + pageNumber + " fetch failed: " + e.getMessage());
                 break;
@@ -136,6 +141,9 @@ public class OracleRecruitingScraper implements CompanyScraper {
 
             try {
                 blobPaths.add(storage.writeSearchPage(context.companyId(), context.runId(), pageNumber, body));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
             } catch (Exception e) {
                 errors.add("Search page " + pageNumber + " storage write failed: " + e.getMessage());
             }
@@ -146,7 +154,7 @@ public class OracleRecruitingScraper implements CompanyScraper {
             if (page.requisitions().isEmpty() || offset >= page.totalJobsCount()) {
                 break;
             }
-            sleepPolitely(errors);
+            sleepPolitely();
         }
         return searchPagesFetched;
     }
@@ -156,23 +164,35 @@ public class OracleRecruitingScraper implements CompanyScraper {
             List<String> blobPaths,
             List<String> errors,
             Map<String, OracleRequisitionSummary> requisitionsById,
-            Map<String, String> salaryRangesById) {
+            Map<String, String> salaryRangesById,
+            Map<String, String> descriptionPathsById) throws InterruptedException {
         int detailPagesFetched = 0;
-        int detailCap = properties.maxDetailPagesPerRun();
 
         for (OracleRequisitionSummary requisition : requisitionsById.values()) {
-            if (detailPagesFetched >= detailCap) {
-                break;
-            }
-            sleepPolitely(errors);
+            sleepPolitely();
 
             try {
                 String body = getBody(site.detailUri(requisition.id()));
-                blobPaths.add(storage.writeJobDetail(context.companyId(), context.runId(), requisition.id(), body));
                 detailPagesFetched++;
+                try {
+                    blobPaths.add(storage.writeJobDetail(context.companyId(), context.runId(), requisition.id(), body));
+                } catch (InterruptedException e) {
+                    throw e;
+                } catch (Exception e) {
+                    errors.add("Detail storage failed for job " + requisition.id() + ": " + e.getMessage());
+                }
                 String description = OracleRecruitingResponseParser.parseDescriptionText(objectMapper, body);
                 SalaryRangeExtractor.extractFromText(description)
                         .ifPresent(range -> salaryRangesById.put(requisition.id(), range));
+                if (description.isBlank()) {
+                    throw new IllegalArgumentException("Empty job description");
+                }
+                descriptionPathsById.put(requisition.id(), Objects.requireNonNull(storage.writeDescription(
+                        context.companyId(), context.runId(), requisition.id(), description),
+                        "Description storage returned no path"));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
             } catch (Exception e) {
                 errors.add("Detail fetch failed for job " + requisition.id() + ": " + e.getMessage());
             }
@@ -196,7 +216,7 @@ public class OracleRecruitingScraper implements CompanyScraper {
             int detailPagesFetched,
             List<OracleRequisitionSummary> requisitions,
             List<String> errors,
-            List<String> blobPaths) {
+            List<String> blobPaths) throws InterruptedException {
         try {
             OracleRunSummary summary = new OracleRunSummary(
                     context.runId(),
@@ -210,18 +230,20 @@ public class OracleRecruitingScraper implements CompanyScraper {
                     errors);
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(summary);
             blobPaths.add(storage.writeRunSummary(context.companyId(), context.runId(), json));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
         } catch (Exception e) {
             errors.add("Run summary write failed: " + e.getMessage());
         }
     }
 
-    private void sleepPolitely(List<String> errors) {
+    private void sleepPolitely() throws InterruptedException {
         try {
             Thread.sleep(properties.requestDelay().toMillis());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            errors.add("Request delay interrupted: " + e.getMessage());
+            throw e;
         }
     }
 }
-

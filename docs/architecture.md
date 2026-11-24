@@ -27,12 +27,15 @@ run ID. The HTTP trigger can publish a command for one company or each enabled
 company. A successful trigger response is not evidence that the broker has
 acknowledged every command or that the scrape, storage, or email succeeded.
 
-The scraper fetches search results and a limited number of detail pages, writes
-the responses to raw storage, and publishes a completion event containing the
-scraped jobs and any collected errors. The normalizer classifies each job
+The scraper fetches a capped number of search pages and attempts details for
+every discovered job when required by the source. It writes raw responses and
+plain-text descriptions to storage, then publishes a completion event containing
+job metadata, description references, and any collected errors. The normalizer classifies each job
 against the current posting, publishes normalized postings, and then publishes
 one notification event for that company. The email lists scraped jobs and
-includes available salary information and failures.
+includes available salary information and failures. The persistence consumer
+reads the referenced description from storage before upserting the posting.
+Full descriptions are not placed in Kafka messages.
 
 The persistence and metrics functions independently consume normalized
 postings. **The notification does not wait for persistence to finish**, and
@@ -75,13 +78,18 @@ because a handler returned.
   Local file mode places all three under the configured root followed by
   `{companyId}/{yyyy}/{MM}/{dd}/{runId}`. The date comes from the host's local
   clock. Detail files use the `.html` suffix even if the source response is JSON.
-  Raw files may contain full descriptions and other source-site fields; only
-  configured detail pages are fetched. Frost Bank stores the extracted
+  Readable descriptions are also stored separately as
+  `raw/{companyId}/{yyyy}/{MM}/{dd}/{runId}/description-{jobIdHash}.txt`
+  (under the equivalent local run directory in file mode). Raw files may contain
+  full descriptions and other source-site fields. Frost Bank stores the extracted
   search-data JSON rather than the complete search-page HTML.
 - **Cosmos DB:** `job-postings` contains current normalized postings, keyed by
   company and external job ID. Fields include title, normalized title, level,
-  location, posted date, URL, timestamps, activity state, and content hash.
-  It does **not** contain the complete description or salary.
+  location, posted date, URL, timestamps, activity state, content hash, and
+  `description` as plain text when it was successfully obtained. It does not
+  store salary as a separate field. Failed or missing descriptions do not
+  overwrite previously stored text. Description-only changes do not affect
+  the content hash or new/changed notification counts.
   `job-observations` stores one upserted observation per company, posting and
   UTC **persistence** date; delayed processing can differ from the scrape date.
   `monthly-metrics` contains aggregates by company, month,
@@ -104,8 +112,10 @@ dates; it has no HTTP or timer trigger and does not delete old metric documents.
 
 ## Important limitations
 
-- Request/page caps can make results incomplete. Details and ordering differ by
-  source; see [company sources](company-sources.md).
+- Search-page caps, detail failures, and source changes can make results
+  incomplete. Fetching all discovered details increases runtime and requests;
+  very large messages or descriptions can also exceed broker or Cosmos limits.
+  Details and ordering differ by source; see [company sources](company-sources.md).
 - `JOB_SCRAPER_MAX_RETRIES` and the global `JOB_SCRAPER_ENABLED` are present in
   configuration, but the current scrape/trigger code does not use them to retry
   HTTP requests or disable runs. Disable companies individually instead. Kafka
@@ -119,7 +129,10 @@ dates; it has no HTTP or timer trigger and does not delete old metric documents.
 - With Cosmos disabled, no-op repositories do not persist data and every posting
   is classified as new. With Resend disabled, the notification sender logs the
   summary instead of sending email. If neither Blob nor file storage is enabled,
-  raw-storage calls return mock paths without writing files.
+  raw response calls return mock paths without writing files and description
+  storage reports errors. The scraper and persistence consumer must access the
+  same Blob container or, for local file mode, a shared filesystem. Blob data
+  must remain available until persistence and any redeliveries complete.
 - HTTP credentials, cloud resource names, and email configuration belong in
   local ignored settings or deployment secret stores, never in documentation or
   source control. See [local development](runbooks/local-development.md) and

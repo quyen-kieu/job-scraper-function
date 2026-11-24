@@ -6,6 +6,7 @@ import com.jobscraper.function.JobScraperProperties;
 import com.jobscraper.infrastructure.blob.RawScrapeStorage;
 import com.jobscraper.scraper.api.CompanyScraper;
 import com.jobscraper.scraper.api.JobSearchHttpClient;
+import com.jobscraper.scraper.api.JobDescriptionText;
 import com.jobscraper.scraper.api.SalaryRangeExtractor;
 import com.jobscraper.scraper.api.ScrapeContext;
 import com.jobscraper.scraper.api.ScrapeResult;
@@ -80,11 +81,35 @@ public class FirstCitizensScraper implements CompanyScraper {
 
             try {
                 paths.add(storage.writeSearchPage(context.companyId(), context.runId(), page, body));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
             } catch (Exception e) {
                 errors.add("Search page " + page + " storage write failed: " + e.getMessage());
             }
             pagesFetched++;
-            searchPage.jobs().forEach(job -> jobs.putIfAbsent(job.externalJobId(), job));
+            for (ParsedJob parsed : searchPage.jobs()) {
+                ScrapedJob job = parsed.job();
+                if (jobs.containsKey(job.externalJobId())) {
+                    continue;
+                }
+                if (parsed.description().isBlank()) {
+                    errors.add("Missing description for job " + job.externalJobId());
+                } else {
+                    try {
+                        String path = java.util.Objects.requireNonNull(storage.writeDescription(
+                                context.companyId(), context.runId(), job.externalJobId(), parsed.description()),
+                                "Description storage returned no path");
+                        job = job.withDescriptionPath(path);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    } catch (Exception e) {
+                        errors.add("Description storage failed for job " + job.externalJobId() + ": " + e.getMessage());
+                    }
+                }
+                jobs.put(job.externalJobId(), job);
+            }
             if (searchPage.jobs().isEmpty() && (long) (page - 1) * PAGE_SIZE < searchPage.totalCount()) {
                 errors.add("Search page " + page + " was empty before reaching the reported total");
                 break;
@@ -101,6 +126,9 @@ public class FirstCitizensScraper implements CompanyScraper {
                     pagesFetched, 0, scrapedJobs, errors);
             paths.add(storage.writeRunSummary(context.companyId(), context.runId(),
                     objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(summary)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
         } catch (Exception e) {
             errors.add("Run summary write failed: " + e.getMessage());
         }
@@ -119,7 +147,7 @@ public class FirstCitizensScraper implements CompanyScraper {
                 || !root.path("totalCount").canConvertToInt() || root.path("totalCount").intValue() < 0) {
             throw new IllegalArgumentException("Invalid jobs API response");
         }
-        List<ScrapedJob> jobs = new ArrayList<>();
+        List<ParsedJob> jobs = new ArrayList<>();
         for (JsonNode entry : root.path("jobs")) {
             JsonNode data = entry.path("data");
             String id = requiredText(data, "req_id");
@@ -140,8 +168,10 @@ public class FirstCitizensScraper implements CompanyScraper {
             }
             String url = BASE_URL + "/jobs/" + URLEncoder.encode(slug, StandardCharsets.UTF_8).replace("+", "%20")
                     + "?lang=en-us";
-            String salary = SalaryRangeExtractor.extract(data.path("description").asText("")).orElse(null);
-            jobs.add(new ScrapedJob(id, title, location, date, url, salary));
+            String descriptionHtml = data.path("description").asText("");
+            String salary = SalaryRangeExtractor.extract(descriptionHtml).orElse(null);
+            jobs.add(new ParsedJob(new ScrapedJob(id, title, location, date, url, salary),
+                    JobDescriptionText.fromHtml(descriptionHtml)));
         }
         return new SearchPage(root.path("totalCount").intValue(), jobs);
     }
@@ -154,7 +184,10 @@ public class FirstCitizensScraper implements CompanyScraper {
         return value.textValue();
     }
 
-    private record SearchPage(int totalCount, List<ScrapedJob> jobs) {
+    private record ParsedJob(ScrapedJob job, String description) {
+    }
+
+    private record SearchPage(int totalCount, List<ParsedJob> jobs) {
     }
 
     private record RunSummary(String runId, String companyId, Instant startedAt, Instant completedAt,

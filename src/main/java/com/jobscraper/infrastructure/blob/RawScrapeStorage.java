@@ -33,6 +33,16 @@ public interface RawScrapeStorage {
     String writeJobDetail(String companyId, String runId, String externalJobId, String html) throws Exception;
 
     /**
+     * Writes a plain-text description separately so Kafka events carry only its path.
+     */
+    String writeDescription(String companyId, String runId, String externalJobId, String text) throws Exception;
+
+    /**
+     * Reads a description previously written for the specified company and posting.
+     */
+    String readDescription(String companyId, String externalJobId, String path) throws Exception;
+
+    /**
      * Writes a run-summary document to Blob Storage under the {@code normalized/} prefix.
      *
      * @param companyId the company ID for path partitioning
@@ -43,4 +53,3 @@ public interface RawScrapeStorage {
      */
     String writeRunSummary(String companyId, String runId, String json) throws Exception;
 }
-

@@ -69,18 +69,22 @@ the configured database. Open `job-postings` to inspect normalized documents,
 For example, query the postings container:
 
 ```sql
-SELECT c.companyId, c.externalJobId, c.title, c.location, c.datePosted, c.url
+SELECT c.companyId, c.externalJobId, c.titleRaw, c.location, c.datePosted, c.url, c.description
 FROM c
 WHERE c.companyId = "mckesson"
 ```
 
 Use the configured database and container names if they differ from the
-defaults. Full descriptions and salary are not fields in the normalized
-posting. In your storage account, use **Storage browser** or Azure Storage
+defaults. The `description` field contains readable plain text when successfully
+captured; salary is not a separate field. Older documents or jobs with missing
+or failed detail requests may have no description. A successful future scrape
+after deployment can populate discovered jobs; records outside its search-page
+cap are not automatically backfilled.
+
+In your storage account, use **Storage browser** or Azure Storage
 Explorer to browse the configured raw container by company, host-local date, and run
-ID. Open the search and fetched detail files for source fields and
-descriptions. Some details are absent when the detail-page cap or a request
-failure prevented fetching them.
+ID. Open the search, fetched detail, and separately stored description files for
+source fields and text. A request or storage failure can leave details missing.
 
 For local file mode, browse the ignored `output/raw` directory instead.
 See [architecture](../architecture.md#stored-data) for the layouts and

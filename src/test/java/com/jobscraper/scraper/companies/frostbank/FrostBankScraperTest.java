@@ -61,12 +61,22 @@ class FrostBankScraperTest {
                 .thenAnswer(invocation -> "search-" + invocation.getArgument(2));
         lenient().when(storage.writeJobDetail(anyString(), anyString(), anyString(), anyString()))
                 .thenAnswer(invocation -> "detail-" + invocation.getArgument(2));
+        lenient().when(storage.writeDescription(anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> "description-" + invocation.getArgument(2));
         lenient().when(storage.writeRunSummary(anyString(), anyString(), anyString())).thenReturn("summary");
+        lenient().when(httpClient.get(org.mockito.ArgumentMatchers.argThat(
+                uri -> uri != null && uri.toString().startsWith(BASE + "job/")))).thenAnswer(invocation -> {
+                    URI uri = invocation.getArgument(0);
+                    var matcher = java.util.regex.Pattern.compile("R\\d+").matcher(uri.toString());
+                    if (!matcher.find()) {
+                        throw new IllegalArgumentException("Unexpected test job URL");
+                    }
+                    return response(200, fixture("job-detail.html").replace("R260062", matcher.group()));
+                });
     }
 
     @Test
     void fetchesPagesDetailsAndStructuredJobs() throws Exception {
-        properties.setMaxDetailPagesPerRun(1);
         HttpResponse<String> page1 = response(200, fixture("search-page1.html"));
         HttpResponse<String> page2 = response(200, fixture("search-page2.html"));
         String detailHtml = fixture("job-detail.html");
@@ -79,16 +89,20 @@ class FrostBankScraperTest {
 
         assertThat(result.companyId()).isEqualTo(COMPANY_ID);
         assertThat(result.searchPagesFetched()).isEqualTo(2);
-        assertThat(result.detailPagesFetched()).isEqualTo(1);
+        assertThat(result.detailPagesFetched()).isEqualTo(3);
         assertThat(result.errors()).isEmpty();
-        assertThat(result.blobPaths()).containsExactly("search-1", "search-2", "detail-R260062", "summary");
+        assertThat(result.blobPaths()).containsExactly("search-1", "search-2", "detail-R260062",
+                "detail-R261325", "detail-R262361", "summary");
         assertThat(result.jobs()).extracting(ScrapedJob::externalJobId).containsExactly("R260062", "R261325", "R262361");
         assertThat(result.jobs().get(0)).isEqualTo(new ScrapedJob("R260062", "Engineer III - AI",
-                "San Antonio, TX - One Frost", LocalDate.of(2026, 1, 13), FIRST_JOB, "$100,000 - $150,000 per year"));
-        assertThat(result.jobs().get(1).salaryRange()).isNull();
+                "San Antonio, TX - One Frost", LocalDate.of(2026, 1, 13), FIRST_JOB,
+                "$100,000 - $150,000 per year", "description-R260062"));
+        assertThat(result.jobs().get(1).descriptionPath()).isEqualTo("description-R261325");
         assertThat(result.jobs().get(2).datePosted()).isEqualTo(LocalDate.of(2026, 11, 20));
         verify(httpClient, never()).get(searchUri(20));
         verify(storage).writeJobDetail(COMPANY_ID, "run-1", "R260062", detailHtml);
+        verify(storage).writeDescription(eq(COMPANY_ID), eq("run-1"), eq("R260062"),
+                org.mockito.ArgumentMatchers.argThat(text -> text.contains("$100,000") && !text.contains("<")));
 
         ArgumentCaptor<String> searchJson = ArgumentCaptor.forClass(String.class);
         verify(storage).writeSearchPage(eq(COMPANY_ID), eq("run-1"), eq(1), searchJson.capture());
@@ -98,9 +112,8 @@ class FrostBankScraperTest {
     }
 
     @Test
-    void respectsSearchAndDetailRequestCapsEvenWhenDetailsFail() throws Exception {
+    void respectsSearchCapAndAttemptsOtherDetailsWhenOneFails() throws Exception {
         properties.setMaxSearchPagesPerRun(1);
-        properties.setMaxDetailPagesPerRun(1);
         HttpResponse<String> page1 = response(200, fixture("search-page1.html"));
         HttpResponse<String> error = response(503, "");
         when(httpClient.get(searchUri(0))).thenReturn(page1);
@@ -110,15 +123,32 @@ class FrostBankScraperTest {
 
         assertThat(result.jobs()).hasSize(2);
         assertThat(result.searchPagesFetched()).isEqualTo(1);
-        assertThat(result.detailPagesFetched()).isZero();
+        assertThat(result.detailPagesFetched()).isEqualTo(1);
         assertThat(result.errors()).singleElement().asString().contains("R260062", "HTTP 503");
         verify(httpClient, never()).get(searchUri(10));
-        verify(httpClient, never()).get(URI.create(BASE + "job/FRBAUSR261325EXTERNALENUS"));
+        verify(httpClient).get(URI.create(BASE + "job/FRBAUSR261325EXTERNALENUS"));
+    }
+
+    @Test
+    void attemptsMoreThanTenDetailsAfterARequestFailure() throws Exception {
+        HttpResponse<String> first = response(200, generatedSearch(0, 10));
+        HttpResponse<String> second = response(200, generatedSearch(10, 12));
+        HttpResponse<String> failure = response(503, "");
+        when(httpClient.get(searchUri(0))).thenReturn(first);
+        when(httpClient.get(searchUri(10))).thenReturn(second);
+        when(httpClient.get(URI.create(BASE + "job/FRBAUSR100000EXTERNALENUS"))).thenReturn(failure);
+
+        ScrapeResult result = scraper.scrape(context());
+
+        assertThat(result.jobs()).hasSize(12);
+        assertThat(result.detailPagesFetched()).isEqualTo(11);
+        assertThat(result.jobs().get(11).descriptionPath()).isEqualTo("description-R100011");
+        assertThat(result.errors()).singleElement().asString().contains("R100000", "503");
+        verify(httpClient).get(URI.create(BASE + "job/FRBAUSR100011EXTERNALENUS"));
     }
 
     @Test
     void reportsSearchHttpAndSchemaErrorsWithoutDroppingEarlierJobs() throws Exception {
-        properties.setMaxDetailPagesPerRun(0);
         HttpResponse<String> page1 = response(200, fixture("search-page1.html"));
         HttpResponse<String> malformed = response(200, "<html><body>No data</body></html>");
         when(httpClient.get(searchUri(0))).thenReturn(page1);
@@ -133,21 +163,19 @@ class FrostBankScraperTest {
     @Test
     void reportsMalformedOrMismatchedDetailsAndKeepsSearchJobs() throws Exception {
         properties.setMaxSearchPagesPerRun(1);
-        properties.setMaxDetailPagesPerRun(1);
         HttpResponse<String> page = response(200, fixture("search-page1.html"));
         HttpResponse<String> wrongDetail = response(200, fixture("job-detail.html").replace("R260062", "R999999"));
         when(httpClient.get(searchUri(0))).thenReturn(page);
         when(httpClient.get(URI.create(FIRST_JOB))).thenReturn(wrongDetail);
         ScrapeResult result = scraper.scrape(context());
         assertThat(result.jobs()).hasSize(2);
-        assertThat(result.detailPagesFetched()).isEqualTo(1);
+        assertThat(result.detailPagesFetched()).isEqualTo(2);
         assertThat(result.jobs().get(0).salaryRange()).isNull();
-        assertThat(result.errors()).singleElement().asString().contains("Detail parse failed", "R260062");
+        assertThat(result.errors()).singleElement().asString().contains("Description processing failed", "R260062");
     }
 
     @Test
     void handlesEmptyAndInvalidSearchResults() throws Exception {
-        properties.setMaxDetailPagesPerRun(0);
         HttpResponse<String> empty = response(200, "<script>phApp.ddo = "
                 + "{\"eagerLoadRefineSearch\":{\"status\":200,\"totalHits\":0,\"data\":{\"jobs\":[]}}};</script>");
         HttpResponse<String> invalid = response(200, "<script>phApp.ddo = "
@@ -184,6 +212,17 @@ class FrostBankScraperTest {
 
     private static URI searchUri(int offset) {
         return URI.create(BASE + "c/technology-digital-jobs?from=" + offset);
+    }
+
+    private String generatedSearch(int start, int end) throws Exception {
+        var jobs = java.util.stream.IntStream.range(start, end)
+                .mapToObj(i -> java.util.Map.of("reqId", "R" + (100000 + i),
+                        "jobSeqNo", "FRBAUSR" + (100000 + i) + "EXTERNALENUS",
+                        "title", "Engineer", "location", "Texas"))
+                .toList();
+        return "<script>phApp.ddo = " + objectMapper.writeValueAsString(java.util.Map.of(
+                "eagerLoadRefineSearch", java.util.Map.of("status", 200, "totalHits", 12,
+                        "data", java.util.Map.of("jobs", jobs)))) + ";</script>";
     }
 
     private static String fixture(String name) throws Exception {

@@ -14,6 +14,7 @@ import java.util.Objects;
  * @param url the absolute public URL of the job detail page, or {@code null} if unknown
  * @param salaryRange the salary range read from the job description (e.g. {@code $101,000 - $168,400}),
  *                    or {@code null} if the detail page was not fetched or lists no pay
+ * @param descriptionPath path to the plain-text description in raw storage, or {@code null}
  */
 public record ScrapedJob(
         String externalJobId,
@@ -21,7 +22,17 @@ public record ScrapedJob(
         String location,
         LocalDate datePosted,
         String url,
-        String salaryRange) {
+        String salaryRange,
+        String descriptionPath) {
+
+    public ScrapedJob(String externalJobId, String title, String location, LocalDate datePosted,
+                      String url, String salaryRange) {
+        this(externalJobId, title, location, datePosted, url, salaryRange, null);
+    }
+
+    public ScrapedJob withDescriptionPath(String path) {
+        return new ScrapedJob(externalJobId, title, location, datePosted, url, salaryRange, path);
+    }
 
     public ScrapedJob {
         Objects.requireNonNull(externalJobId, "externalJobId must not be null");
@@ -33,4 +44,3 @@ public record ScrapedJob(
         }
     }
 }
-

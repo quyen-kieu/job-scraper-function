@@ -1,10 +1,12 @@
 package com.jobscraper.scraper.companies.mckesson;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobscraper.function.JobScraperProperties;
 import com.jobscraper.infrastructure.blob.RawScrapeStorage;
 import com.jobscraper.scraper.api.CompanyScraper;
 import com.jobscraper.scraper.api.JobSearchHttpClient;
+import com.jobscraper.scraper.api.JobDescriptionText;
 import com.jobscraper.scraper.api.SalaryRangeExtractor;
 import com.jobscraper.scraper.api.ScrapeContext;
 import com.jobscraper.scraper.api.ScrapeResult;
@@ -15,52 +17,36 @@ import java.net.URI;
 import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * {@link CompanyScraper} implementation for the McKesson company.
- *
- * <p>Fetches real search-results pages and job-detail pages from
- * {@code careers.mckesson.com}, verified live on 2026-08-23 (see
- * {@link McKessonSearchResultsParser} and {@link McKessonJobDetailParser} for the exact
- * endpoint and selectors). Raw responses are written via {@link RawScrapeStorage}, and a
- * structured {@link McKessonRunSummary} is written as the run-summary document.</p>
- *
- * <p>Per-run limits ({@link JobScraperProperties#maxSearchPagesPerRun()},
- * {@link JobScraperProperties#maxDetailPagesPerRun()}) cap search pages and successfully fetched
- * and stored details. Failed detail attempts can result in more requests than the detail limit.
- * {@link JobScraperProperties#requestDelay()} adds a small pause between requests. Full
- * retry/backoff/circuit-breaker/DLT handling remains deferred.</p>
+ * Scrapes McKesson's Workday career site using its configured search facets.
  */
 @Component
 public class McKessonScraper implements CompanyScraper {
 
-    private static final String BASE_URL = "https://careers.mckesson.com";
-    private static final DateTimeFormatter DATE_POSTED_FORMAT = DateTimeFormatter.ofPattern("M/d/yyyy");
-    private static final String SEARCH_PATH = "/en/search-jobs/results";
-    private static final String SEARCH_QUERY_TEMPLATE =
-            "ActiveFacetID=0&CurrentPage=%d&RecordsPerPage=15&Distance=50&RadiusUnitType=0"
-                    + "&Keywords=&Location=&ShowRadius=False&IsPagination=True&FacetTerm=&FacetType=0"
-                    + "&SearchResultsModuleName=Search+Results&SearchFilterModuleName=Search+Filter"
-                    + "&SortCriteria=0&SortDirection=0&SearchType=5&PostalCode=";
+    private static final String BASE_URL = "https://mckesson.wd3.myworkdayjobs.com";
+    private static final String API_PATH = "/wday/cxs/mckesson/External_Careers";
+    private static final String PUBLIC_PATH = "/en-US/External_Careers";
+    private static final URI SEARCH_URI = URI.create(BASE_URL + API_PATH + "/jobs");
+    private static final int PAGE_SIZE = 20;
+    private static final Pattern RELATIVE_DATE = Pattern.compile("^Posted (\\d+) Days? Ago$");
+    private static final Pattern FACET_ID = Pattern.compile("^[0-9a-fA-F]{32}$");
 
     private final JobSearchHttpClient httpClient;
     private final RawScrapeStorage storage;
     private final ObjectMapper objectMapper;
     private final JobScraperProperties properties;
 
-    public McKessonScraper(
-            JobSearchHttpClient httpClient,
-            RawScrapeStorage storage,
-            ObjectMapper objectMapper,
-            JobScraperProperties properties) {
+    public McKessonScraper(JobSearchHttpClient httpClient, RawScrapeStorage storage,
+                           ObjectMapper objectMapper, JobScraperProperties properties) {
         this.httpClient = httpClient;
         this.storage = storage;
         this.objectMapper = objectMapper;
@@ -75,168 +61,204 @@ public class McKessonScraper implements CompanyScraper {
     @Override
     public ScrapeResult scrape(ScrapeContext context) throws Exception {
         Instant startedAt = Instant.now();
-        List<String> blobPaths = new ArrayList<>();
+        LocalDate today = startedAt.atZone(ZoneOffset.UTC).toLocalDate();
+        List<String> paths = new ArrayList<>();
         List<String> errors = new ArrayList<>();
-        Set<McKessonJobSummary> allJobs = new LinkedHashSet<>();
-        Map<String, String> salaryRangesByJobId = new HashMap<>();
-
-        int searchPagesFetched = fetchSearchPages(context, blobPaths, errors, allJobs);
-        int detailPagesFetched = fetchDetailPages(context, blobPaths, errors, allJobs, salaryRangesByJobId);
-
+        Map<String, Candidate> candidates = new LinkedHashMap<>();
+        int pagesFetched = fetchSearchPages(context, today, candidates, paths, errors);
+        int detailsFetched = fetchDetails(context, candidates, paths, errors);
         Instant completedAt = Instant.now();
+        List<ScrapedJob> jobs = candidates.values().stream().map(Candidate::job).toList();
 
-        writeRunSummary(context, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
-                allJobs, errors, blobPaths);
-
-        return new ScrapeResult(
-                context.runId(),
-                context.companyId(),
-                startedAt,
-                completedAt,
-                searchPagesFetched,
-                detailPagesFetched,
-                blobPaths,
-                errors,
-                allJobs.stream()
-                        .map(job -> toScrapedJob(job, salaryRangesByJobId.get(job.externalJobId())))
-                        .toList()
-        );
-    }
-
-    /**
-     * Maps a search-results entry to the company-agnostic {@link ScrapedJob}. The date is parsed
-     * from the site's {@code MM/dd/yyyy} display format; unparseable values become {@code null}
-     * rather than failing the run.
-     *
-     * @param job the search-results entry
-     * @param salaryRange the salary range parsed from the detail page, or {@code null}
-     */
-    static ScrapedJob toScrapedJob(McKessonJobSummary job, String salaryRange) {
-        LocalDate datePosted;
         try {
-            datePosted = LocalDate.parse(job.datePostedRaw().trim(), DATE_POSTED_FORMAT);
-        } catch (DateTimeParseException e) {
-            datePosted = null;
-        }
-        String url = job.detailPath().isBlank() ? null : BASE_URL + job.detailPath();
-        return new ScrapedJob(job.externalJobId(), job.titleRaw(), job.location(), datePosted, url, salaryRange);
-    }
-
-    private int fetchSearchPages(
-            ScrapeContext context,
-            List<String> blobPaths,
-            List<String> errors,
-            Set<McKessonJobSummary> allJobs) {
-        int searchPagesFetched = 0;
-        int page = 1;
-        int totalPages = 1;
-        int pageCap = properties.maxSearchPagesPerRun();
-
-        while (page <= totalPages && searchPagesFetched < pageCap) {
-            HttpResponse<String> response;
-            try {
-                response = httpClient.get(buildSearchUri(page));
-            } catch (Exception e) {
-                errors.add("Search page " + page + " fetch failed: " + e.getMessage());
-                break;
-            }
-
-            McKessonSearchResponse envelope;
-            try {
-                envelope = objectMapper.readValue(response.body(), McKessonSearchResponse.class);
-            } catch (Exception e) {
-                errors.add("Search page " + page + " parse failed: " + e.getMessage());
-                break;
-            }
-
-            try {
-                blobPaths.add(storage.writeSearchPage(context.companyId(), context.runId(), page, response.body()));
-            } catch (Exception e) {
-                errors.add("Search page " + page + " storage write failed: " + e.getMessage());
-            }
-            searchPagesFetched++;
-
-            McKessonSearchPage parsedPage = McKessonSearchResultsParser.parse(envelope.results());
-            allJobs.addAll(parsedPage.jobs());
-            if (parsedPage.totalPages() > 0) {
-                totalPages = parsedPage.totalPages();
-            }
-
-            page++;
-            sleepPolitely(errors);
-        }
-
-        return searchPagesFetched;
-    }
-
-    private int fetchDetailPages(
-            ScrapeContext context,
-            List<String> blobPaths,
-            List<String> errors,
-            Set<McKessonJobSummary> allJobs,
-            Map<String, String> salaryRangesByJobId) {
-        int detailPagesFetched = 0;
-        int detailCap = properties.maxDetailPagesPerRun();
-
-        for (McKessonJobSummary job : allJobs) {
-            if (detailPagesFetched >= detailCap) {
-                break;
-            }
-
-            try {
-                HttpResponse<String> response = httpClient.get(URI.create(BASE_URL + job.detailPath()));
-                blobPaths.add(storage.writeJobDetail(
-                        context.companyId(), context.runId(), job.externalJobId(), response.body()));
-                detailPagesFetched++;
-                SalaryRangeExtractor.extract(response.body())
-                        .ifPresent(range -> salaryRangesByJobId.put(job.externalJobId(), range));
-            } catch (Exception e) {
-                errors.add("Detail page fetch failed for job " + job.externalJobId() + ": " + e.getMessage());
-            }
-
-            sleepPolitely(errors);
-        }
-
-        return detailPagesFetched;
-    }
-
-    private void writeRunSummary(
-            ScrapeContext context,
-            Instant startedAt,
-            Instant completedAt,
-            int searchPagesFetched,
-            int detailPagesFetched,
-            Set<McKessonJobSummary> allJobs,
-            List<String> errors,
-            List<String> blobPaths) {
-        try {
-            McKessonRunSummary summary = new McKessonRunSummary(
-                    context.runId(),
-                    context.companyId(),
-                    startedAt,
-                    completedAt,
-                    searchPagesFetched,
-                    detailPagesFetched,
-                    List.copyOf(allJobs),
-                    errors
-            );
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(summary);
-            blobPaths.add(storage.writeRunSummary(context.companyId(), context.runId(), json));
+            McKessonRunSummary summary = new McKessonRunSummary(context.runId(), context.companyId(),
+                    startedAt, completedAt, pagesFetched, detailsFetched, jobs, errors);
+            paths.add(storage.writeRunSummary(context.companyId(), context.runId(),
+                    objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(summary)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
         } catch (Exception e) {
             errors.add("Run summary write failed: " + e.getMessage());
         }
+
+        return new ScrapeResult(context.runId(), context.companyId(), startedAt, completedAt,
+                pagesFetched, detailsFetched, paths, errors, jobs);
     }
 
-    private URI buildSearchUri(int page) {
-        return URI.create(BASE_URL + SEARCH_PATH + "?" + String.format(SEARCH_QUERY_TEMPLATE, page));
+    private int fetchSearchPages(ScrapeContext context, LocalDate today,
+                                 Map<String, Candidate> candidates, List<String> paths,
+                                 List<String> errors) throws InterruptedException {
+        int fetched = 0;
+        int total = Integer.MAX_VALUE;
+        for (int page = 0; page < properties.maxSearchPagesPerRun(); page++) {
+            int offset = page * PAGE_SIZE;
+            try {
+                if (page > 0) {
+                    pause();
+                }
+                String body = requireSuccess(httpClient.postJson(SEARCH_URI, searchRequest(offset)));
+                JsonNode root = objectMapper.readTree(body);
+                JsonNode postings = root.path("jobPostings");
+                if (!postings.isArray() || (page == 0 && !root.path("total").isIntegralNumber())) {
+                    throw new IllegalArgumentException("Invalid Workday search response");
+                }
+                if (page == 0) {
+                    total = root.path("total").intValue();
+                }
+                if (postings.isEmpty() && offset < total) {
+                    throw new IllegalArgumentException("Workday returned an empty page before the reported total");
+                }
+                List<Candidate> parsed = new ArrayList<>();
+                for (JsonNode posting : postings) {
+                    parsed.add(parsePosting(posting, today));
+                }
+                try {
+                    paths.add(storage.writeSearchPage(context.companyId(), context.runId(), page + 1, body));
+                } catch (InterruptedException e) {
+                    throw e;
+                } catch (Exception e) {
+                    errors.add("Search page " + (page + 1) + " storage write failed: " + e.getMessage());
+                }
+                fetched++;
+                parsed.forEach(candidate -> candidates.putIfAbsent(candidate.job().externalJobId(), candidate));
+                if (postings.isEmpty() || offset + postings.size() >= total) {
+                    break;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch (Exception e) {
+                errors.add("Search page " + (page + 1) + " failed: " + e.getMessage());
+                break;
+            }
+        }
+        return fetched;
     }
 
-    private void sleepPolitely(List<String> errors) {
+    private String searchRequest(int offset) throws Exception {
+        Map<String, List<String>> facets = Map.of(
+                "Location_Region_State_Province", List.of(requireFacet(properties.getMckessonStateFacetId())),
+                "jobFamilyGroup", List.of(requireFacet(properties.getMckessonJobFamilyFacetId())),
+                "Location_Country", List.of(requireFacet(properties.getMckessonCountryFacetId())));
+        return objectMapper.writeValueAsString(Map.of(
+                "appliedFacets", facets, "limit", PAGE_SIZE, "offset", offset, "searchText", ""));
+    }
+
+    private static String requireFacet(String id) {
+        if (id == null || !FACET_ID.matcher(id).matches()) {
+            throw new IllegalArgumentException("McKesson Workday facet IDs must be 32 hexadecimal characters");
+        }
+        return id;
+    }
+
+    private static Candidate parsePosting(JsonNode posting, LocalDate today) {
+        String title = posting.path("title").asText("");
+        String path = posting.path("externalPath").asText("");
+        JsonNode bullets = posting.path("bulletFields");
+        String id = bullets.isArray() && !bullets.isEmpty() ? bullets.get(0).asText("") : "";
+        if (title.isBlank() || id.isBlank() || !path.startsWith("/job/") || path.contains("..")
+                || path.contains("?") || path.contains("#") || path.contains("\\")) {
+            throw new IllegalArgumentException("Workday search posting is missing a valid title, job ID or path");
+        }
+        String location = posting.path("locationsText").asText("Unknown");
+        ScrapedJob job = new ScrapedJob(id, title, location, relativeDate(posting.path("postedOn").asText(""), today),
+                BASE_URL + PUBLIC_PATH + path, null);
+        return new Candidate(path, job);
+    }
+
+    private int fetchDetails(ScrapeContext context, Map<String, Candidate> candidates,
+                             List<String> paths, List<String> errors) throws InterruptedException {
+        int fetched = 0;
+        for (Map.Entry<String, Candidate> entry : candidates.entrySet()) {
+            Candidate candidate = entry.getValue();
+            try {
+                pause();
+                String body = requireSuccess(httpClient.get(URI.create(BASE_URL + API_PATH + candidate.path())));
+                JsonNode info = objectMapper.readTree(body).path("jobPostingInfo");
+                if (!info.isObject()) {
+                    throw new IllegalArgumentException("Invalid Workday detail response");
+                }
+                fetched++;
+                try {
+                    paths.add(storage.writeJobDetail(context.companyId(), context.runId(), entry.getKey(), body));
+                } catch (InterruptedException e) {
+                    throw e;
+                } catch (Exception e) {
+                    errors.add("Detail storage write failed for job " + entry.getKey() + ": " + e.getMessage());
+                }
+                ScrapedJob job = candidate.job();
+                LocalDate date = absoluteDate(info.path("startDate").asText(""));
+                String salary = SalaryRangeExtractor.extract(info.path("jobDescription").asText("")).orElse(null);
+                String description = JobDescriptionText.fromHtml(info.path("jobDescription").asText(""));
+                String descriptionPath = null;
+                if (description.isBlank()) {
+                    errors.add("Missing description for job " + entry.getKey());
+                } else {
+                    try {
+                        descriptionPath = java.util.Objects.requireNonNull(storage.writeDescription(
+                                context.companyId(), context.runId(), entry.getKey(), description),
+                                "Description storage returned no path");
+                    } catch (InterruptedException e) {
+                        throw e;
+                    } catch (Exception e) {
+                        errors.add("Description storage failed for job " + entry.getKey() + ": " + e.getMessage());
+                    }
+                }
+                entry.setValue(new Candidate(candidate.path(), new ScrapedJob(job.externalJobId(), job.title(),
+                        job.location(), date != null ? date : job.datePosted(), job.url(), salary, descriptionPath)));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch (Exception e) {
+                errors.add("Detail fetch failed for job " + entry.getKey() + ": " + e.getMessage());
+            }
+        }
+        return fetched;
+    }
+
+    private static LocalDate relativeDate(String value, LocalDate today) {
+        if ("Posted Today".equals(value)) {
+            return today;
+        }
+        if ("Posted Yesterday".equals(value)) {
+            return today.minusDays(1);
+        }
+        Matcher matcher = RELATIVE_DATE.matcher(value);
+        if (matcher.matches()) {
+            try {
+                return today.minusDays(Long.parseLong(matcher.group(1)));
+            } catch (NumberFormatException | java.time.DateTimeException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static LocalDate absoluteDate(String value) {
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    private static String requireSuccess(HttpResponse<String> response) {
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("HTTP " + response.statusCode());
+        }
+        return response.body();
+    }
+
+    private void pause() throws InterruptedException {
         try {
             Thread.sleep(properties.requestDelay().toMillis());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            errors.add("Request delay interrupted: " + e.getMessage());
+            throw e;
         }
+    }
+
+    private record Candidate(String path, ScrapedJob job) {
     }
 }

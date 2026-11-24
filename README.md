@@ -10,7 +10,7 @@ using free tier cloud services. These pillars drive the design decisions and
 project outcomes.
 
 The configured sources are McKesson, GM Financial, First Citizens Bank, and
-Frost Bank. Searches are bounded by configurable page and detail limits, so
+Frost Bank. Searches are bounded by a configurable search-page limit, so
 results are not necessarily exhaustive. See [company sources](docs/company-sources.md)
 for the searches, source-specific behavior, and implementations.
 

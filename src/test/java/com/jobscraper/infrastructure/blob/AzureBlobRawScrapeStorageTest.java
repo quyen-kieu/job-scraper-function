@@ -88,7 +88,14 @@ class AzureBlobRawScrapeStorageTest {
         String content = blob.downloadContent().toString();
         assertThat(content).isEqualTo(json);
     }
-}
 
+    @Test
+    void shouldRoundTripDescription() throws Exception {
+        String path = storage.writeDescription("mckesson", "run-123", "JR123", "Caf\u00e9 \u2014 engineer");
+        assertThat(storage.readDescription("mckesson", "JR123", path)).isEqualTo("Caf\u00e9 \u2014 engineer");
+        assertThatThrownBy(() -> storage.readDescription("mckesson", "other", path))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+}
 
 

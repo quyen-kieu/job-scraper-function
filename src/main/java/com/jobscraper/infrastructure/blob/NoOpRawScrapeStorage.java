@@ -29,9 +29,18 @@ public class NoOpRawScrapeStorage implements RawScrapeStorage {
     }
 
     @Override
+    public String writeDescription(String companyId, String runId, String externalJobId, String text) {
+        throw new IllegalStateException("Description storage requires Azure Blob Storage or file mode");
+    }
+
+    @Override
+    public String readDescription(String companyId, String externalJobId, String path) {
+        throw new IllegalStateException("Description storage requires Azure Blob Storage or file mode");
+    }
+
+    @Override
     public String writeRunSummary(String companyId, String runId, String json) {
         // Return a mock path without actually writing
         return String.format("mock://summary/%s/%s/run-summary", companyId, runId);
     }
 }
-

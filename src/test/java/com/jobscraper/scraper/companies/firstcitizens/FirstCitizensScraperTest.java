@@ -2,6 +2,7 @@ package com.jobscraper.scraper.companies.firstcitizens;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobscraper.function.JobScraperProperties;
+import com.jobscraper.application.command.ScrapeCompletedEvent;
 import com.jobscraper.infrastructure.blob.RawScrapeStorage;
 import com.jobscraper.scraper.api.JobSearchHttpClient;
 import com.jobscraper.scraper.api.ScrapeContext;
@@ -54,6 +55,8 @@ class FirstCitizensScraperTest {
         scraper = new FirstCitizensScraper(httpClient, storage, new ObjectMapper().findAndRegisterModules(), properties);
         lenient().when(storage.writeSearchPage(anyString(), anyString(), anyInt(), anyString()))
                 .thenAnswer(invocation -> "search-" + invocation.getArgument(2));
+        lenient().when(storage.writeDescription(anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> "description-" + invocation.getArgument(2));
         lenient().when(storage.writeRunSummary(anyString(), anyString(), anyString())).thenReturn("summary");
     }
 
@@ -77,7 +80,9 @@ class FirstCitizensScraperTest {
         assertThat(result.jobs().get(0)).isEqualTo(new ScrapedJob("36571",
                 "Enterprise Resilience Analyst (Remote)", "Raleigh, North Carolina; North Carolina, United States",
                 LocalDate.of(2026, 11, 19), "https://firstcitizens.jibeapply.com/jobs/36571?lang=en-us",
-                "$95,000 and $125,000"));
+                "$95,000 and $125,000", "description-36571"));
+        verify(storage).writeDescription(eq(COMPANY_ID), eq("run-1"), eq("36571"),
+                org.mockito.ArgumentMatchers.argThat(text -> text.contains("$95,000") && !text.contains("<")));
         assertThat(result.jobs().get(1).location()).isEqualTo("Raleigh, North Carolina");
         assertThat(result.jobs().get(1).salaryRange()).isNull();
         assertThat(result.jobs().get(2).salaryRange()).isEqualTo("$110,000 - $150,000");
@@ -96,6 +101,40 @@ class FirstCitizensScraperTest {
         assertThat(capped.searchPagesFetched()).isEqualTo(1);
         assertThat(capped.jobs()).hasSize(2);
         verify(httpClient, never()).get(uri(2));
+    }
+
+    @Test
+    void storesAllDescriptionsBeyondTenWithoutPuttingTextInCompletionMessage() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        String text = "Detailed requirements ".repeat(5000);
+        HttpResponse<String> first = response(200, generatedPage(mapper, 0, 10, text));
+        HttpResponse<String> second = response(200, generatedPage(mapper, 10, 12, text));
+        when(httpClient.get(uri(1))).thenReturn(first);
+        when(httpClient.get(uri(2))).thenReturn(second);
+        when(storage.writeDescription(eq(COMPANY_ID), eq("run-1"), eq("1000"), anyString()))
+                .thenThrow(new IllegalStateException("storage unavailable"));
+
+        ScrapeResult result = scraper.scrape(context());
+
+        assertThat(result.jobs()).hasSize(12);
+        assertThat(result.jobs().get(0).descriptionPath()).isNull();
+        assertThat(result.jobs().get(11).descriptionPath()).isEqualTo("description-1011");
+        assertThat(result.errors()).singleElement().asString().contains("1000", "storage unavailable");
+        ScrapeCompletedEvent event = new ScrapeCompletedEvent(result.runId(), result.companyId(),
+                result.startedAt(), result.completedAt(), result.searchPagesFetched(), result.detailPagesFetched(),
+                result.blobPaths(), result.errors(), result.jobs());
+        byte[] kafkaMessage = mapper.writeValueAsBytes(event);
+        assertThat(kafkaMessage.length).isLessThan(1048576);
+        assertThat(new String(kafkaMessage, StandardCharsets.UTF_8)).doesNotContain("Detailed requirements");
+    }
+
+    private static String generatedPage(ObjectMapper mapper, int start, int end, String text) throws Exception {
+        var jobs = java.util.stream.IntStream.range(start, end)
+                .mapToObj(i -> java.util.Map.of("data", java.util.Map.of(
+                        "req_id", Integer.toString(1000 + i), "slug", Integer.toString(1000 + i),
+                        "title", "Engineer", "description", "<p>" + text + "</p>")))
+                .toList();
+        return mapper.writeValueAsString(java.util.Map.of("totalCount", 12, "jobs", jobs));
     }
 
     @Test
