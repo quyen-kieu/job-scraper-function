@@ -34,10 +34,10 @@ import java.util.Set;
  * structured {@link McKessonRunSummary} is written as the run-summary document.</p>
  *
  * <p>Per-run limits ({@link JobScraperProperties#maxSearchPagesPerRun()},
- * {@link JobScraperProperties#maxDetailPagesPerRun()}) cap the amount of live traffic sent
- * to the real site, and {@link JobScraperProperties#requestDelay()} adds a small pause
- * between requests. Full retry/backoff/circuit-breaker/DLT handling remains deferred, as
- * documented in the README's Stage 3 status.</p>
+ * {@link JobScraperProperties#maxDetailPagesPerRun()}) cap search pages and successfully fetched
+ * and stored details. Failed detail attempts can result in more requests than the detail limit.
+ * {@link JobScraperProperties#requestDelay()} adds a small pause between requests. Full
+ * retry/backoff/circuit-breaker/DLT handling remains deferred.</p>
  */
 @Component
 public class McKessonScraper implements CompanyScraper {
@@ -240,5 +240,3 @@ public class McKessonScraper implements CompanyScraper {
         }
     }
 }
-
-

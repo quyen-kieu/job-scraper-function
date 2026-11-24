@@ -1,8 +1,7 @@
 package com.jobscraper.application.notification;
 
 /**
- * Guards against sending a duplicate daily notification email for the same {@code runId}, per
- * the README's Stage 6 requirement to "prevent duplicate emails for the same run ID."
+ * Guards against sending a duplicate daily notification email for the same notification key.
  *
  * <p>The realistic risk this guards against: Kafka redelivers a {@code notifications.daily}
  * message when a prior consumer process is interrupted after {@link DailyNotificationSender#send}
@@ -25,4 +24,3 @@ public interface SentNotificationGuard {
      */
     void markSent(String runId);
 }
-

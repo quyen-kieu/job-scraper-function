@@ -1,9 +1,7 @@
 name: infra-validate
 
-# Stage 7 scope only: lint, build, and preview infrastructure changes on pull requests.
-# Deliberately does NOT apply/deploy anything, require approval, or touch application code —
-# that full pipeline (validate -> plan -> approval -> apply -> deploy app -> smoke test) is
-# Stage 8 and is intentionally not implemented yet (see docs/STAGE7_PLAN.md).
+# Pull-request infrastructure checks. This workflow does not apply or deploy; the separate
+# deploy.yml workflow also runs plans and can apply on qualifying pushes or manual runs.
 
 on:
   pull_request:
@@ -80,7 +78,7 @@ jobs:
           CONFLUENT_ENVIRONMENT_ID: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
           CONFLUENT_CLUSTER_ID: ${{ secrets.CONFLUENT_CLUSTER_ID }}
 
-      - name: terraform plan (read-only preview, requires real backend to run for real)
+      - name: terraform plan (optional preview)
         if: ${{ vars.TF_PLAN_ENABLED == 'true' }}
         run: terraform plan -input=false
         env:
@@ -88,4 +86,3 @@ jobs:
           TF_VAR_confluent_cloud_api_secret: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
           TF_VAR_confluent_environment_id: ${{ secrets.CONFLUENT_ENVIRONMENT_ID }}
           TF_VAR_confluent_cluster_id: ${{ secrets.CONFLUENT_CLUSTER_ID }}
-

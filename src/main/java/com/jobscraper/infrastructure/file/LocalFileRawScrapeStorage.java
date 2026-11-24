@@ -15,8 +15,8 @@ import java.time.format.DateTimeFormatter;
 /**
  * Implementation of {@link RawScrapeStorage} that writes to the local filesystem.
  *
- * <p>Intended for local development and manual scrape runs (e.g. {@code LocalMcKessonScrapeRunner})
- * before Blob Storage is wired up. Uses the same path layout documented in the README:</p>
+ * <p>Intended for local development and manual scrape runs (e.g. {@code LocalMcKessonScrapeRunner}).
+ * Files are written under the configured root:</p>
  *
  * <pre>
  * {root}/{companyId}/{yyyy}/{MM}/{dd}/{runId}/search-page-{n}.json
@@ -67,4 +67,3 @@ public class LocalFileRawScrapeStorage implements RawScrapeStorage {
         return path.toAbsolutePath().toString();
     }
 }
-

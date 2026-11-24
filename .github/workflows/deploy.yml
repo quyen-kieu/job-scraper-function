@@ -1,16 +1,10 @@
 name: deploy
 
-# Stage 8 — the full CI/CD pipeline from the README's Stage 8 pipeline diagram:
-#   validate -> unit-tests -> package -> plan-azure -> plan-confluent -> approval-gate
-#     -> apply-azure -> apply-confluent -> deploy-app -> smoke-test-kafka
-#
-# Trigger behavior (enforces README item 11, "restrict production deployment to the main
-# branch", structurally rather than by convention — see the `setup` job's should_apply logic):
-#   - pull_request: validate/unit-tests/package/plan-azure/plan-confluent only (read-only preview).
-#   - push to main: full pipeline, targeting the "production" GitHub Environment (requires the
-#     manual reviewer approval configured there — see .github/workflows/README.md).
-#   - workflow_dispatch: manual run against either environment; production is still only allowed
-#     to apply when the workflow is running from the main branch ref.
+# CI/CD pipeline and prerequisites: see .github/workflows/README.md.
+# Pull requests validate, package and plan without applying, but planning can create backend
+# resources, register providers, create a resource group, and import Terraform state.
+# Pushes to main target production. Manual runs can target dev or production; production applies
+# only from main. Configured GitHub Environment protection rules also apply to plan jobs.
 
 on:
   pull_request:
@@ -79,7 +73,7 @@ jobs:
           REGION_CODE="cus"
           FUNCTION_APP_NAME="jobscraper-${BICEP_ENV}-${REGION_CODE}"
 
-          # README item 11: production only ever applies when running from main, regardless of
+          # Production only ever applies when running from main, regardless of
           # trigger type (push or manual workflow_dispatch). dev may apply from any branch/run,
           # since it's not "production". PRs never apply (validate/plan only).
           SHOULD_APPLY="false"
@@ -101,7 +95,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Resolved: environment=${GH_ENV} bicep_env=${BICEP_ENV} function_app=${FUNCTION_APP_NAME} should_apply=${SHOULD_APPLY}"
 
-  # README item 2 + Bicep/Terraform syntax checks (mirrors infra-validate.yml so this pipeline
+  # Bicep/Terraform syntax checks (mirrors infra-validate.yml so this pipeline
   # is self-contained and doesn't depend on that separate PR-only workflow having also run).
   validate:
     needs: setup
@@ -132,10 +126,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Validate Kafka topic/consumer-group config drift (README item 2)
+      - name: Validate Kafka topic/consumer-group config drift
         run: python scripts/validate_kafka_config.py
 
-  # README item 1.
+  # Integration-tagged tests are excluded by the existing Surefire configuration.
   unit-tests:
     needs: setup
     runs-on: ubuntu-latest
@@ -149,7 +143,7 @@ jobs:
       - name: mvn test (integration-tagged tests excluded by existing surefire config)
         run: mvn -B test
 
-  # README item 3. Uploads the staging directory as an artifact so deploy-app doesn't rebuild.
+  # Upload the staging directory as an artifact so deploy-app doesn't rebuild.
   package:
     needs: [setup, unit-tests]
     runs-on: ubuntu-latest
@@ -161,13 +155,8 @@ jobs:
           java-version: "21"
           cache: maven
       - name: mvn clean package (skip tests, already run in unit-tests)
-        # -DfunctionAppName must match the same override deploy-app's `mvn azure-functions:deploy`
-        # step uses (needs.setup.outputs.function_app_name), NOT pom.xml's hardcoded default. The
-        # azure-functions-maven-plugin's `package` goal stages the jar under
-        # target/azure-functions/<functionAppName>/, and `deploy` later looks for it under
-        # target/azure-functions/<the -DfunctionAppName it was given>/ — if the two don't match
-        # (e.g. package used pom.xml's default while deploy used the real per-env name), `deploy`
-        # fails with "Failed to find function artifact ... please re-package the project".
+        # The Maven package goal stages the app under target/azure-functions/<functionAppName>/;
+        # deploy-app reads the directory named by the same setup output.
         run: |
           mvn -B -DskipTests -DfunctionAppName=${{ needs.setup.outputs.function_app_name }} clean package
       - uses: actions/upload-artifact@v4
@@ -176,7 +165,7 @@ jobs:
           path: target/azure-functions/**
           retention-days: 7
 
-  # README item 5.
+  # Preview Azure deployment after ensuring the provider and resource group exist.
   plan-azure:
     needs: setup
     runs-on: ubuntu-latest
@@ -221,7 +210,7 @@ jobs:
                          resendFromEmail="${RESEND_FROM_EMAIL}" \
                          resendToEmail="${RESEND_TO_EMAIL}"
 
-  # README item 4. Uses the REAL remote backend (unlike infra-validate.yml's stateless preview),
+  # Uses the real remote backend (unlike infra-validate.yml's stateless preview),
   # since this plan must be apply-able by apply-confluent later in the same pipeline.
   plan-confluent:
     needs: setup
@@ -488,7 +477,7 @@ jobs:
           path: infra/confluent/tfplan.enc
           retention-days: 1
 
-  # README item 7. `environment:` here is the approval-gate (README item 6) — GitHub blocks this
+  # `environment:` here can be an approval gate — GitHub blocks this
   # job until a required reviewer approves, for any environment configured with reviewers
   # (see .github/workflows/README.md for the one-time repo setup).
   apply-azure:
@@ -528,7 +517,7 @@ jobs:
                          resendToEmail="${RESEND_TO_EMAIL}" \
             --output none
 
-  # README item 8. Reuses the exact plan approved above (no re-plan/re-approve drift).
+  # Reuses the saved plan (no re-plan between planning and apply).
   apply-confluent:
     needs: [setup, validate, plan-azure, plan-confluent]
     if: needs.setup.outputs.should_apply == 'true'
@@ -590,7 +579,7 @@ jobs:
           echo "${output}"
           exit ${status}
 
-  # README item 9 + closes the Stage 7 forward-reference for populating Key Vault secrets.
+  # Populate Key Vault, refresh references, and deploy the packaged app.
   deploy-app:
     needs: [setup, package, apply-azure, apply-confluent]
     if: needs.setup.outputs.should_apply == 'true'
@@ -617,8 +606,7 @@ jobs:
             --query "properties.outputs.keyVaultName.value" -o tsv)
           echo "name=${KV_NAME}" >> "$GITHUB_OUTPUT"
 
-      # README item 10: real secret values live only in GitHub Secrets and Key Vault, never in
-      # code. This closes Stage 7's "populated out-of-band... or a future Stage 8 automated step."
+      # Populate externally supplied credentials without committing them.
       - name: Sync real secret values into Key Vault
         env:
           KV_NAME: ${{ steps.kv.outputs.name }}
@@ -654,7 +642,7 @@ jobs:
             --settings "KEYVAULT_SECRETS_SYNCED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --output none
 
-      # Scope decision REVISED (supersedes docs/STAGE8_PLAN.md §4.2): the azure-functions-maven-
+      # The azure-functions-maven-
       # plugin's `deploy` goal does not reliably support Flex Consumption apps as of plugin
       # 1.24.0 — even with appServicePlanName/region correctly aligned to Bicep (see the prior
       # NullPointerException fix), the plugin's update-site-config payload still sets
@@ -701,7 +689,7 @@ jobs:
           echo "::error::config-zip deployment failed after 3 attempts."
           exit 1
 
-  # README item 12.
+  # The smoke test triggers a live scrape; see the scrape-and-verify runbook for limitations.
   smoke-test-kafka:
     needs: [setup, deploy-app]
     if: needs.setup.outputs.should_apply == 'true'

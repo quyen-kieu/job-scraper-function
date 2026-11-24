@@ -7,7 +7,7 @@ import java.util.List;
  * Contract for persisting daily job observation documents.
  *
  * <p>Implementations must be idempotent: upserting a document with the same
- * {@link JobObservation#id()} (deterministic per company, scrape date, and external job ID)
+ * {@link JobObservation#id()} (deterministic per company, observation date, and external job ID)
  * must replace, not duplicate, the existing document.</p>
  */
 public interface JobObservationRepository {

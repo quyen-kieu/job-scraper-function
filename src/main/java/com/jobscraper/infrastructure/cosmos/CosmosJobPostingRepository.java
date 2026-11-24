@@ -14,8 +14,7 @@ import java.util.Optional;
 /**
  * Implementation of {@link JobPostingRepository} using Azure Cosmos DB.
  *
- * <p>Upserts are partitioned by {@code /companyId}, matching the container's partition key
- * definition documented in the README's {@code job-postings} section.</p>
+ * <p>Upserts are partitioned by {@code /companyId}, matching the container's partition key.</p>
  */
 @Component
 @ConditionalOnProperty(prefix = "azure.cosmos", name = "enabled", havingValue = "true")
@@ -49,4 +48,3 @@ public class CosmosJobPostingRepository implements JobPostingRepository {
         }
     }
 }
-

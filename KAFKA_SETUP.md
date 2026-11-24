@@ -1,6 +1,9 @@
 # Kafka Local Setup
 
 Set Kafka credentials as environment variables and keep them out of source control.
+The Azure Functions Kafka triggers use SASL/PLAIN over TLS; changing the
+producer's protocol/mechanism settings does not change those trigger annotations.
+The snippets below use placeholders and do not provision a broker or topics.
 
 ## PowerShell (current session)
 
@@ -14,29 +17,15 @@ $env:KAFKA_USERNAME = "<api-key>"
 $env:KAFKA_PASSWORD = "<api-secret>"
 ```
 
-## PowerShell (persist for current user)
+For local Functions, the ignored `local.settings.json` is another way to set
+these values along with the remaining topic and consumer-group settings. Avoid
+persisting credentials in user-level environment variables or shell history.
 
-```powershell
-[Environment]::SetEnvironmentVariable("KAFKA_ENABLED","true","User")
-[Environment]::SetEnvironmentVariable("KAFKA_BOOTSTRAP_SERVERS","pkc-xxxxx.region.provider.confluent.cloud:9092","User")
-[Environment]::SetEnvironmentVariable("KAFKA_SECURITY_PROTOCOL","SASL_SSL","User")
-[Environment]::SetEnvironmentVariable("KAFKA_SASL_MECHANISM","PLAIN","User")
-[Environment]::SetEnvironmentVariable("KAFKA_SCRAPE_COMMANDS_TOPIC","job.scrape.commands","User")
-[Environment]::SetEnvironmentVariable("KAFKA_USERNAME","<api-key>","User")
-[Environment]::SetEnvironmentVariable("KAFKA_PASSWORD","<api-secret>","User")
-```
+## Infrastructure as code
 
-Open a new terminal after user-level changes.
+The [architecture reference](docs/architecture.md#kafka-contracts) describes the default
+topics and payloads. Terraform in `infra/confluent/` manages five primary topics and five
+dead-letter topics against an existing cluster; it does not create a cluster.
 
-## Infrastructure as code (Stage 7)
-
-The topic settings documented here (and in the root README's "Confluent Kafka topic reference"
-section) are now also expressed as reviewable Terraform in `infra/confluent/`. That module
-manages the same 5 primary topics + 5 DLTs against the **existing** `shared-kafka-dev-us-central1`
-cluster (created manually, as described above) — it does not create a new cluster.
-
-Because the topics already exist, `infra/confluent/README.md` documents a required one-time
-`terraform import` runbook that must run before the first `terraform apply`; skipping it will
-cause Terraform to fail with a "topic already exists" error. See that file for the exact commands.
-
-
+If the topics already exist, the [Confluent runbook](infra/confluent/README.md) describes
+the import and plan checks needed before applying Terraform.

@@ -5,19 +5,17 @@ import java.time.LocalDate;
 import java.util.Objects;
 
 /**
- * One observation of a job posting during a single daily scrape run.
+ * One persisted daily observation of a job posting.
  *
  * <p>Persisted in the Cosmos DB {@code job-observations} container, partitioned by
  * {@code /companyId}. Unlike {@link NormalizedJobPosting}, which holds only the current
- * state, this record preserves a full history of sightings for later month rebuilds.</p>
+ * state, this record retains at most one observation per posting and UTC persistence date for
+ * later month rebuilds. Multiple runs or redeliveries on the same date replace that observation.</p>
  *
- * <p><b>Note on {@code runId}:</b> the {@code job.postings.normalized} Kafka message schema
- * (per the README's Confluent Schema Registry contract) does not carry the originating
- * scrape {@code runId} in its {@code payload}, and its JSON Schema forbids additional
- * properties. Consequently, {@code runId} here identifies the persistence invocation
- * that recorded this observation, not the upstream Kafka scrape command's run ID. Wiring the
- * true scrape {@code runId} through to persistence would require a wire-schema change and is
- * out of scope for this stage.</p>
+ * <p><b>Note on {@code runId}:</b> the {@code job.postings.normalized} event does not carry
+ * the originating scrape run ID. Consequently, {@code runId} here identifies the persistence
+ * invocation that recorded this observation, not the upstream Kafka scrape command's run ID.
+ * Wiring the true scrape {@code runId} through to persistence requires a wire-contract change.</p>
  */
 public record JobObservation(
         String id,
@@ -59,12 +57,12 @@ public record JobObservation(
     /**
      * Builds the deterministic document ID for a job observation.
      *
-     * <p>Format: {@code {companyId}:{scrapeDate}:{externalJobId}}, per the README's
-     * job-deduplication guarantee. Ensures the same posting is recorded only once per
-     * company and scrape date, even if Kafka redelivers the event.</p>
+     * <p>Format: {@code {companyId}:{scrapeDate}:{externalJobId}}. Ensures the same posting is
+     * stored once per company and date, even if Kafka redelivers the event. The persistence
+     * handler supplies the current UTC date, which can differ from the original scrape date.</p>
      *
      * @param companyId the company ID
-     * @param scrapeDate the date of the scrape run
+     * @param scrapeDate the observation date
      * @param externalJobId the external job ID from the company site
      * @return the deterministic document ID
      */
@@ -75,5 +73,3 @@ public record JobObservation(
         return companyId + ":" + scrapeDate + ":" + externalJobId;
     }
 }
-
-

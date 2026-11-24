@@ -27,9 +27,9 @@ import java.util.regex.Pattern;
  *
  * <p><b>Security:</b> this function uses {@link AuthorizationLevel#FUNCTION}, so every request must
  * include a valid function key (query string {@code ?code=...} or header {@code x-functions-key}).
- * The Functions host enforces this before {@link #run} is ever invoked, both locally (Azure Functions
- * Core Tools issues local keys) and in Azure (function-specific or host keys). See the README section
- * "Triggering a scrape: cron vs. on demand" for exact local key retrieval and usage instructions.</p>
+ * The Functions host enforces this in Azure before {@link #run} is invoked. Azure Functions Core
+ * Tools normally disables authorization locally unless started with authorization enabled. See
+ * the scrape-and-verify runbook for usage instructions.</p>
  */
 @Component
 public class OnDemandScrapeCommandProducerFunction {
@@ -123,4 +123,3 @@ public class OnDemandScrapeCommandProducerFunction {
         return node.toString();
     }
 }
-

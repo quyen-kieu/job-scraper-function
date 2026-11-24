@@ -14,7 +14,7 @@ import java.util.Optional;
 /**
  * Implementation of {@link MonthlyMetricRepository} using Azure Cosmos DB.
  *
- * <p>Items are partitioned by {@code /month}, per the README's monthly-metrics container design.</p>
+ * <p>Items are partitioned by {@code /month}.</p>
  */
 @Component
 @ConditionalOnProperty(prefix = "azure.cosmos", name = "enabled", havingValue = "true")
@@ -44,4 +44,3 @@ public class CosmosMonthlyMetricRepository implements MonthlyMetricRepository {
         container.upsertItem(metric, new PartitionKey(metric.month()), new CosmosItemRequestOptions());
     }
 }
-

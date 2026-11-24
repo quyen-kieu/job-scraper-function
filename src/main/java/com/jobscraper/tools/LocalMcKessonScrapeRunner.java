@@ -25,9 +25,8 @@ import java.util.UUID;
  * mvn -q compile exec:java -Dexec.mainClass=com.jobscraper.tools.LocalMcKessonScrapeRunner
  * </pre>
  *
- * <p>Output is written under {@code ./output/raw/mckesson/{yyyy}/{MM}/{dd}/{runId}/}, matching
- * the README's documented Blob Storage path layout. Wiring this scraper to real Azure Blob
- * Storage and Cosmos DB is a separate, later step.</p>
+ * <p>Output is written under {@code ./output/raw/mckesson/{yyyy}/{MM}/{dd}/{runId}/}. This runner
+ * uses local files and does not exercise the Blob Storage or Cosmos DB integrations.</p>
  */
 public final class LocalMcKessonScrapeRunner {
 
@@ -79,6 +78,5 @@ public final class LocalMcKessonScrapeRunner {
         }
     }
 }
-
 
 

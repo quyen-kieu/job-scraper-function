@@ -9,14 +9,9 @@
 # in later runs then failed immediately with "Error acquiring the state lock: state blob is
 # already locked", even though no run was actually concurrently writing to state.
 #
-# It is SAFE to auto-force-unlock on that specific error in this pipeline (and only this
-# pipeline), because:
-#   - the workflow's top-level `concurrency: { group: deploy-${{ github.ref }} }` already
-#     guarantees only one workflow run per ref is active at a time, and
-#   - within a single run, every job that touches this Terraform state (plan-confluent,
-#     apply-confluent) executes strictly sequentially via `needs:` — never in parallel.
-# So a lock error here can only mean a stale lease from an earlier crashed/cancelled run, never a
-# real concurrent writer.
+# Per-ref workflow concurrency and sequential jobs do not exclude other refs or local Terraform
+# processes sharing the backend. This helper cannot determine whether a lock is stale; coordinate
+# all state writers before running it. See infra/confluent/README.md.
 #
 # Usage: tf_run_with_unlock_retry terraform import -input=false -lock-timeout=120s ADDR ID
 tf_run_with_unlock_retry() {
@@ -36,16 +31,15 @@ tf_run_with_unlock_retry() {
     lock_id=$(echo "${output}" | grep -oE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n1)
 
     if [ -n "${lock_id}" ]; then
-      echo "::warning::Detected a stale Terraform state lock (ID ${lock_id}), likely left behind by a previous cancelled/crashed run. Force-unlocking and retrying once: $*"
+      echo "::warning::Detected a Terraform state lock (ID ${lock_id}). It may be held by an active writer; force-unlocking and retrying once: $*"
       terraform force-unlock -force "${lock_id}" 2>&1
       output=$("$@" 2>&1)
       status=$?
     else
-      echo "::error::Detected a stale Terraform state lock but could not parse its lock ID from the output below. A manual 'terraform force-unlock <id>' may be required."
+      echo "::error::Detected a Terraform state lock but could not parse its lock ID from the output below. Verify the lock is stale before any manual unlock."
     fi
   fi
 
   echo "${output}"
   return ${status}
 }
-

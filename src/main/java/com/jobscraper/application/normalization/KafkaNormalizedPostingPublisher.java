@@ -13,8 +13,7 @@ import org.springframework.stereotype.Component;
  * Implementation of {@link NormalizedPostingPublisher} using Kafka.
  *
  * <p>Publishes to the {@code job.postings.normalized} topic with {@code companyId:externalJobId}
- * as the key (i.e. {@link NormalizedJobPosting#id()}), matching the README's topic design and
- * preserving per-posting ordering.</p>
+ * as the key (i.e. {@link NormalizedJobPosting#id()}), preserving per-posting ordering.</p>
  */
 @Component
 @ConditionalOnProperty(prefix = "kafka", name = "enabled", havingValue = "true")
@@ -49,4 +48,3 @@ public class KafkaNormalizedPostingPublisher implements NormalizedPostingPublish
         }
     }
 }
-

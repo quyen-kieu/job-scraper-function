@@ -8,8 +8,7 @@ terraform {
     }
   }
 
-  # Remote state: Azure Storage Account backend (see backend.tf for the empty partial config and
-  # docs/STAGE7_PLAN.md open question #2 for the reused-vs-dedicated storage account decision).
+  # Remote state: Azure Storage Account backend; see the Confluent runbook for setup.
   # Concrete backend values (resource_group_name, storage_account_name, container_name, key) are
   # supplied at `terraform init -backend-config=...` time per environment, never hardcoded here.
   backend "azurerm" {}
@@ -20,8 +19,7 @@ provider "confluent" {
   cloud_api_secret = var.confluent_cloud_api_secret
 }
 
-# The cluster and its environment already exist (created manually, see README's "Confluent Kafka
-# topic reference" section) — these are read-only lookups, never managed resources.
+# The cluster and its environment already exist; these are read-only lookups, never managed resources.
 data "confluent_environment" "this" {
   id = var.confluent_environment_id
 }
@@ -34,7 +32,7 @@ data "confluent_kafka_cluster" "shared" {
 }
 
 locals {
-  # Matches the README's "Topic creation settings (all topics)" baseline exactly.
+  # Shared topic configuration.
   topic_baseline_config = {
     "cleanup.policy"    = "delete"
     "retention.ms"      = "604800000"
@@ -42,7 +40,7 @@ locals {
     "max.message.bytes" = "1048576"
   }
 
-  # Matches the README's "Confluent Kafka topic reference" primary + DLT tables exactly.
+  # Each primary topic also has a provisioned dead-letter topic.
   primary_topics = [
     "job.scrape.commands",
     "job.scrape.completed",

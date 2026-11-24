@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
-# Stage 8, README item 12: "Run a smoke test that publishes a test command and verifies the
-# expected event path."
+# Deployment smoke test; see docs/runbooks/scrape-and-verify.md for its limitations.
 #
 # Triggers a REAL on-demand scrape for a designated smoke-test company via the deployed
 # OnDemandScrapeCommandProducer HTTP endpoint, then polls Application Insights for the
 # "Scrape completed for company <id>" trace line that ScraperConsumerFunction logs on success
 # (see src/main/java/com/jobscraper — the exact log line observed during Stage 6 manual testing).
 #
-# This is a deliberate scope decision (see docs/STAGE8_PLAN.md §4.4): it hits the real company
-# careers site, not a mock. Acceptable at this project's scale (single company today,
-# JOB_SCRAPER_REQUEST_DELAY throttling, single-partition topics) — reconsider if company
-# count/frequency grows enough to make repeated CI-triggered scrapes a rate-limit concern.
+# It hits the real company careers site, not a mock; repeated runs can create rate-limit concerns.
 #
 # Required environment variables:
 #   RESOURCE_GROUP            e.g. java-functions-group
 #   FUNCTION_APP_NAME         e.g. job-scraper-function-prod
 #   APP_INSIGHTS_APP_ID       Application Insights "Application ID" (not the connection string)
-#   SMOKE_TEST_COMPANY_ID     defaults to "mckesson" (also configured: "gm-financial")
+#   SMOKE_TEST_COMPANY_ID     defaults to "mckesson"
 #   SMOKE_TEST_TIMEOUT_SECS   defaults to 300 (5 minutes)
 #   SMOKE_TEST_POLL_SECS      defaults to 15
 #
@@ -159,5 +155,4 @@ done
 echo "ERROR: timed out after ${SMOKE_TEST_TIMEOUT_SECS}s waiting for the email-sent trace for runId=${RUN_ID}." >&2
 echo "Check NormalizerConsumerFunction / ResendEmailConsumerFunction failures in Application Insights." >&2
 exit 1
-
 

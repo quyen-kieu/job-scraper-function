@@ -23,8 +23,6 @@ keywords = ["@"]
   regexTarget = "match"
   regexes = [
     '''(?i)@(?:[a-z0-9-]+\.)*example\.(?:com|org|net)$''',
-    '''(?i)^send@domain\.com$''',
-    '''(?i)^user@gmail\.com$''',
     '''(?i)^onboarding@resend\.dev$''',
     '''(?i)@users\.noreply\.github\.com$''',
   ]
@@ -34,4 +32,3 @@ keywords = ["@"]
     '''(?:^|/)node_modules/''',
     '''\.(?:jar|class|pdf|png|jpg|gif|ico)$''',
   ]
-

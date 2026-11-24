@@ -1,10 +1,8 @@
 name: replay
 
-# Stage 8, README item 13: "Add a manual replay workflow for a selected company and date range."
-#
-# SCOPE DECISION (docs/STAGE8_PLAN.md §4.3): this re-triggers a REAL, LIVE on-demand scrape via
+# This re-triggers a real, live on-demand scrape via
 # the deployed OnDemandScrapeCommandProducer HTTP endpoint — it does NOT perform historical
-# reprocessing from already-stored raw/observation data. `MonthlyMetricRebuildService` (Stage 5)
+# reprocessing from already-stored raw/observation data. `MonthlyMetricRebuildService`
 # exists specifically for rebuilding a month from job-observations after a normalization rule
 # change, but has no Function trigger by deliberate design (preserving the fixed function
 # topology). The from_date/to_date inputs below are accepted for forward compatibility and
@@ -46,7 +44,7 @@ jobs:
       - name: Warn if a historical date range was supplied (currently unused)
         if: ${{ inputs.from_date != '' || inputs.to_date != '' }}
         run: |
-          echo "::warning::from_date/to_date were supplied but this workflow only re-triggers a live on-demand scrape today (docs/STAGE8_PLAN.md §4.3) — the date range has no effect."
+          echo "::warning::from_date/to_date were supplied but this workflow only re-triggers a live on-demand scrape — the date range has no effect. See docs/runbooks/scrape-and-verify.md."
 
       - uses: azure/login@v2
         with:
@@ -103,4 +101,3 @@ jobs:
             echo "::error::Replay trigger failed with HTTP ${HTTP_STATUS}"
             exit 1
           fi
-

@@ -15,8 +15,7 @@ import java.util.concurrent.TimeoutException;
 /**
  * Implementation of {@link DailyNotificationPublisher} using Kafka.
  *
- * <p>Publishes to the {@code notifications.daily} topic keyed by {@code runId}, per the
- * README's topic design table.</p>
+ * <p>Publishes to the {@code notifications.daily} topic keyed by {@code runId}.</p>
  */
 @Component
 @ConditionalOnProperty(prefix = "kafka", name = "enabled", havingValue = "true")
@@ -63,4 +62,3 @@ public class KafkaDailyNotificationPublisher implements DailyNotificationPublish
         }
     }
 }
-

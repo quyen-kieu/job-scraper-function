@@ -20,7 +20,7 @@ import java.util.UUID;
  *
  * <p>This is the sole persistence boundary for the platform: it upserts both the
  * current-state {@link NormalizedJobPosting} document and a dated {@link JobObservation}
- * record, per the README's job-deduplication guarantee. Persistence occurs before
+ * record using deterministic IDs. Persistence occurs before
  * this method returns, so any failure here propagates to the caller and blocks the
  * Kafka checkpoint (see {@link com.jobscraper.function.PersistenceConsumerFunction}).</p>
  *
@@ -62,7 +62,7 @@ public class NormalizedPostingPersistenceHandler {
      * <ol>
      *   <li>Deserialize JSON into {@link NormalizedJobPosting}</li>
      *   <li>Upsert the posting into the {@code job-postings} container</li>
-     *   <li>Build a {@link JobObservation} keyed by the current scrape date and upsert it
+     *   <li>Build a {@link JobObservation} keyed by the current UTC persistence date and upsert it
      *       into the {@code job-observations} container</li>
      * </ol>
      *

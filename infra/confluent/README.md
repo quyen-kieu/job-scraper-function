@@ -1,14 +1,15 @@
 # Confluent Terraform — Runbook
 
 Manages the 5 primary topics + 5 dead-letter topics, per-role service accounts, and least-privilege
-ACLs against the **existing** shared cluster `shared-kafka-dev-us-central1` (Azure / South Central
-US). This module never creates a cluster or environment — both are read as data sources.
+ACLs against an existing shared cluster. This module never creates a cluster or environment —
+both are read as data sources.
 
 ## Prerequisites
 
 - Terraform >= 1.7.0.
 - A Confluent Cloud **organization-level API key** with permission to manage Kafka topics, ACLs,
   service accounts, and API keys within the target environment/cluster.
+- A cluster-scoped Kafka API key with the permissions needed to manage topics and ACLs.
 - The cluster's `environment_id` (`env-xxxxxx`) and `cluster_id` (`lkc-xxxxxx`) from the Confluent
   Cloud console.
 
@@ -17,10 +18,17 @@ Export credentials as environment variables — never write them into a committe
 ```powershell
 $env:TF_VAR_confluent_cloud_api_key = "<key>"
 $env:TF_VAR_confluent_cloud_api_secret = "<secret>"
+$env:TF_VAR_kafka_api_key = "<cluster-key>"
+$env:TF_VAR_kafka_api_secret = "<cluster-secret>"
 ```
 
-Copy `terraform.tfvars.example` to `terraform.tfvars` (gitignored) for the non-secret variables
-(`confluent_environment_id`, `confluent_cluster_id`), or pass them with `-var`.
+From the repository root, change to `infra\confluent` before running Terraform. Copy
+`terraform.tfvars.example` to `terraform.tfvars` (gitignored) and set the environment and cluster
+IDs, or pass them with `-var`. Remove the example organization-key and secret entries from the
+copied file: values in `.tfvars` take precedence over `TF_VAR_*`, including placeholder values.
+The example does not contain the cluster-scoped key and secret, so supply those separately.
+The values above are placeholders; avoid typing real credentials into commands that your shell
+records, and keep Terraform state and plan files private.
 
 ## Remote state
 
@@ -39,22 +47,29 @@ terraform init `
 
 In CI (`.github/workflows/deploy.yml`), these same four values come from the
 `TF_BACKEND_RESOURCE_GROUP` / `TF_BACKEND_STORAGE_ACCOUNT` / `TF_BACKEND_CONTAINER` GitHub
-Variables and a `<bicep_env>.tfstate` key — see `.github/workflows/README.md`.
+Variables and a `<bicep_env>.tfstate` key — see the [CI/CD reference](../../.github/workflows/README.md).
 
 ## ⚠️ Existing-resource import (before the first `apply`)
 
-All 10 topics already exist — they were created manually against the shared cluster before this
-Terraform module existed (see the root README's "Confluent Kafka topic reference" section). If you
-run `terraform apply` against a fresh state without importing first, the provider will fail with a
-"topic already exists" error.
+If topics already exist on the target cluster, a fresh Terraform state must import them before
+applying; otherwise the provider will fail with a "topic already exists" error. The default topics
+are described in the [architecture reference](../../docs/architecture.md#kafka-contracts).
 
-1. Run `terraform init` (see above) and `terraform plan` once — expect it to show 10 topics, 5
-   service accounts, and ~17 ACLs as **to be created**. Do **not** apply yet.
-2. For each of the 10 topic names below, run:
+1. Run `terraform init` (see above) and `terraform plan` once. Review proposed creates against
+   the actual cluster and state. Do **not** apply yet.
+2. For each topic in the list below that already exists on the target cluster and is not already
+   in this state, run:
 
    ```powershell
-   terraform import 'module.topics.confluent_kafka_topic.this["<topic-name>"]' "<cluster-id>/<topic-name>"
+   $env:IMPORT_KAFKA_API_KEY = $env:TF_VAR_kafka_api_key
+   $env:IMPORT_KAFKA_API_SECRET = $env:TF_VAR_kafka_api_secret
+   $env:IMPORT_KAFKA_REST_ENDPOINT = "<cluster-rest-endpoint>"
+   terraform import 'module.topics.confluent_kafka_topic.this[\"<topic-name>\"]' "<cluster-id>/<topic-name>"
    ```
+
+   Set the REST endpoint from the target cluster's settings; the `IMPORT_KAFKA_*` variables are
+   required in addition to the complete `TF_VAR_*` set (see the import note below). The escaped
+   quotes in the address are for Windows PowerShell's native command argument handling.
 
    Topic names to import:
    ```
@@ -70,9 +85,8 @@ run `terraform apply` against a fresh state without importing first, the provide
    notifications.daily.DLT
    ```
 
-3. Re-run `terraform plan`. It should now show 0 changes for topics (config already matches the
-   README's shared baseline), and only the *new* resources (service accounts, API keys, ACLs) as
-   "to be created" — those are genuinely new and do not need importing.
+3. Re-run `terraform plan`. Review every change against the actual cluster. Existing resources
+   should be imported rather than recreated; only genuinely new resources should be created.
 4. Only after step 3 shows a clean, expected plan should `terraform apply` be run — and only as
    part of the approval-gated Stage 8 pipeline (`.github/workflows/deploy.yml`'s `apply-confluent`
    job), not ad hoc. The pipeline automatically imports existing topics, service accounts, and
@@ -163,29 +177,27 @@ Error: Error acquiring the state lock
 Error message: state blob is already locked
 ```
 
-This is safe to auto-recover from in this specific pipeline, because the workflow's top-level
-`concurrency: { group: deploy-${{ github.ref }} }` guarantees only one run per ref is ever active,
-and every job touching this state executes strictly sequentially via `needs:` — so a lock error
-here can only mean a stale lease, never a real concurrent writer.
+The workflow's per-ref concurrency group does not exclude jobs on other refs or a local Terraform
+process using the same state. A lock error can therefore indicate an active writer, not only a
+stale lease. Verify no other process is operating on the state before unlocking it.
 
 `infra/confluent/ci/with-stale-lock-retry.sh` provides a `tf_run_with_unlock_retry` bash function
 that every `terraform import`/`plan`/`apply` call in `deploy.yml` is wrapped with. It detects the
 `Error acquiring the state lock` message, parses the `Lock Info` block's `ID:` value out of the
 error output, runs `terraform force-unlock -force <id>`, and retries the original command exactly
-once. No manual intervention is needed — if you ever see the error above in CI, it means something
-upstream (a crash, a cancellation, a runner timeout) genuinely interrupted a prior run; the retry
-handles the cleanup automatically on the next invocation.
+once. Its automatic retry cannot by itself establish that the lock is stale; coordinate all state
+writers and review any lock error before assuming recovery is safe.
 
 If you need to clear a stale lock manually (e.g. running `terraform` locally against the same
 remote state), the lock ID is printed in the error's `Lock Info` block:
 
 ```powershell
-terraform force-unlock -force <lock-id>
+terraform force-unlock -force "<lock-id>"
 ```
 
 ## Scope decision reminder
 
 The 5 service accounts and their ACLs are **not yet consumed by the deployed Function App** — the
 app currently authenticates with one shared `KAFKA_USERNAME`/`KAFKA_PASSWORD` credential
-(`KafkaProperties` has no per-listener override). See `docs/STAGE7_PLAN.md` for the follow-up
-required to adopt per-role credentials in code.
+(`KafkaProperties` has no per-listener override). Adopting per-role credentials requires a
+follow-up change to the application's Kafka configuration.

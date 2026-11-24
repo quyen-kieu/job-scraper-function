@@ -23,11 +23,11 @@ variable "kafka_api_secret" {
 }
 
 variable "confluent_environment_id" {
-  description = "ID of the existing Confluent environment that owns shared-kafka-dev-us-central1."
+  description = "ID of the existing Confluent environment that owns the target cluster."
   type        = string
 }
 
 variable "confluent_cluster_id" {
-  description = "ID of the existing shared-kafka-dev-us-central1 cluster. Looked up as a data source, never created by Terraform."
+  description = "ID of the existing shared cluster. Looked up as a data source, never created by Terraform."
   type        = string
 }

@@ -1,5 +1,5 @@
 variable "kafka_cluster_id" {
-  description = "ID of the existing shared Confluent Kafka cluster (e.g. shared-kafka-dev-us-central1)."
+  description = "ID of the existing shared Confluent Kafka cluster."
   type        = string
 }
 
@@ -37,4 +37,3 @@ variable "topics" {
     config           = map(string)
   }))
 }
-

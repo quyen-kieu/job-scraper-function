@@ -77,8 +77,8 @@ public record NormalizedJobPosting(
     /**
      * Builds the deterministic document ID for a job posting.
      *
-     * <p>Format: {@code {companyId}:{externalJobId}}, per the README's job-deduplication
-     * guarantee. Used to upsert instead of duplicating documents on Kafka redelivery.</p>
+     * <p>Format: {@code {companyId}:{externalJobId}}. Used to upsert instead of duplicating
+     * documents on Kafka redelivery.</p>
      *
      * @param companyId the company ID
      * @param externalJobId the external job ID from the company site
@@ -90,4 +90,3 @@ public record NormalizedJobPosting(
         return companyId + ":" + externalJobId;
     }
 }
-

@@ -13,8 +13,9 @@
         <azure.functions.maven.plugin.version>1.24.0</azure.functions.maven.plugin.version>
         <azure.functions.java.library.version>2.2.0</azure.functions.java.library.version>
         <azure.cosmos.version>4.63.0</azure.cosmos.version>
-        <functionAppName>job-scraper-function-20260815154131779</functionAppName>
-        <appServicePlanName>jobscraper-plan-prod-cus</appServicePlanName>
+        <functionAppName>job-scraper-local</functionAppName>
+        <appServicePlanName>job-scraper-local</appServicePlanName>
+        <azureResourceGroup>job-scraper-local</azureResourceGroup>
         <azureRegion>centralus</azureRegion>
     </properties>
     <dependencyManagement>
@@ -127,7 +128,7 @@
                     <!-- function app name -->
                     <appName>${functionAppName}</appName>
                     <!-- function app resource group -->
-                    <resourceGroup>java-functions-group</resourceGroup>
+                    <resourceGroup>${azureResourceGroup}</resourceGroup>
                     <!-- function app service plan name -->
                     <appServicePlanName>${appServicePlanName}</appServicePlanName>
                     <!-- function app region-->
