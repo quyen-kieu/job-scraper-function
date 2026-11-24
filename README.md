@@ -1,16 +1,17 @@
 # Job Scraper
 
-A Java and Spring Boot application that collects public job listings, saves raw
-and normalized data, calculates monthly metrics, and emails a summary for each
-company. Azure Functions runs the pipeline, Kafka connects its stages, and Azure
-Blob Storage, Cosmos DB, and Resend provide storage and notifications.
+A Java and Spring Boot application that collects public job listings, saves
+normalized data and descriptions in Cosmos DB, calculates monthly metrics, and
+emails a summary for each company. Azure Functions runs the pipeline, Kafka
+connects its stages, and Resend provides notifications. Functions still requires
+its own storage account; scraper data is not archived in Blob Storage.
 
 My main objectives for this project: to learn the technologies and to do so
 using free tier cloud services. These pillars drive the design decisions and
 project outcomes.
 
 The configured sources are McKesson, GM Financial, First Citizens Bank, and
-Frost Bank. Searches are bounded by configurable page and detail limits, so
+Frost Bank. Searches are bounded by a configurable search-page limit, so
 results are not necessarily exhaustive. See [company sources](docs/company-sources.md)
 for the searches, source-specific behavior, and implementations.
 
@@ -26,8 +27,8 @@ mvn clean package
 mvn azure-functions:run
 ```
 
-The sample uses local files for raw output and disables Blob Storage, Cosmos DB,
-and email; a running Kafka broker is still needed for the full pipeline. See
+The sample uses local files for raw output and disables Cosmos DB and email; a
+running Kafka broker is still needed for the full pipeline. See
 the [local development runbook](docs/runbooks/local-development.md) before
 running. Do not commit credentials, private settings, or scrape output.
 

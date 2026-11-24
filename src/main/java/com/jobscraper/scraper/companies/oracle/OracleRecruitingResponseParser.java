@@ -2,7 +2,9 @@ package com.jobscraper.scraper.companies.oracle;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.jsoup.Jsoup;
+import com.jobscraper.domain.job.DescriptionFormat;
+import com.jobscraper.scraper.api.JobDescriptionText;
+import org.jsoup.nodes.TextNode;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -57,23 +59,34 @@ public final class OracleRecruitingResponseParser {
     }
 
     /**
-     * Extracts the plain-text job description from one job-detail response.
+     * Extracts the source description fragments from one job-detail response.
      *
      * @param objectMapper the JSON mapper
      * @param json the raw response body
-     * @return the description text (HTML stripped, whitespace collapsed); empty if absent
+     * @return the source fragments, joined in display order; empty if absent
      * @throws IOException if the body is not valid JSON
      */
-    public static String parseDescriptionText(ObjectMapper objectMapper, String json) throws IOException {
+    public static String parseDescriptionSource(ObjectMapper objectMapper, String json) throws IOException {
         JsonNode detail = objectMapper.readTree(json).path("items").path(0);
-        StringBuilder html = new StringBuilder();
+        List<String> fragments = new ArrayList<>();
         for (String field : DESCRIPTION_FIELDS) {
             JsonNode value = detail.path(field);
             if (value.isTextual() && !value.asText().isBlank()) {
-                html.append("<div>").append(value.asText()).append("</div>");
+                fragments.add(value.asText());
             }
         }
-        return html.isEmpty() ? "" : Jsoup.parse(html.toString()).text();
+        boolean hasHtml = fragments.stream()
+                .anyMatch(fragment -> JobDescriptionText.sourceFormat(fragment) == DescriptionFormat.HTML);
+        if (hasHtml) {
+            return fragments.stream()
+                    .map(fragment -> JobDescriptionText.sourceFormat(fragment) == DescriptionFormat.HTML
+                            ? fragment : new TextNode(fragment).outerHtml())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+        }
+        return String.join("\n\n", fragments);
+    }
+
+    public static String parseDescriptionText(ObjectMapper objectMapper, String json) throws IOException {
+        return JobDescriptionText.fromHtml(parseDescriptionSource(objectMapper, json));
     }
 }
-

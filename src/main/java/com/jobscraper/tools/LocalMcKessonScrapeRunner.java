@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.jobscraper.configuration.RawStorageProperties;
 import com.jobscraper.function.JobScraperProperties;
-import com.jobscraper.infrastructure.blob.RawScrapeStorage;
+import com.jobscraper.infrastructure.storage.RawScrapeStorage;
 import com.jobscraper.infrastructure.file.LocalFileRawScrapeStorage;
 import com.jobscraper.infrastructure.http.JavaHttpJobSearchClient;
 import com.jobscraper.scraper.api.ScrapeContext;
@@ -16,7 +16,7 @@ import java.util.UUID;
 
 /**
  * Standalone runner that executes a real McKesson scrape and writes results to local files,
- * without requiring a live Kafka broker, Azure Functions host, Blob Storage, or Cosmos DB.
+ * without requiring a live Kafka broker, Azure Functions host, or Cosmos DB.
  *
  * <p>This is a manual developer tool, not part of the Function App's runtime wiring. It
  * constructs its dependencies directly (no Spring context) so it can be run standalone via:</p>
@@ -26,7 +26,7 @@ import java.util.UUID;
  * </pre>
  *
  * <p>Output is written under {@code ./output/raw/mckesson/{yyyy}/{MM}/{dd}/{runId}/}. This runner
- * uses local files and does not exercise the Blob Storage or Cosmos DB integrations.</p>
+ * uses local files and does not exercise the Cosmos DB integration.</p>
  */
 public final class LocalMcKessonScrapeRunner {
 
@@ -36,8 +36,7 @@ public final class LocalMcKessonScrapeRunner {
 
     public static void main(String[] args) throws Exception {
         JobScraperProperties scraperProperties = new JobScraperProperties();
-        // Defaults (max 3 search pages, 10 detail pages, 300ms delay) are intentionally
-        // conservative for a first live run against a real third-party site.
+        // Defaults limit search pages and add a delay between requests.
 
         RawStorageProperties storageProperties = new RawStorageProperties();
         storageProperties.setMode("file");
@@ -78,5 +77,3 @@ public final class LocalMcKessonScrapeRunner {
         }
     }
 }
-
-

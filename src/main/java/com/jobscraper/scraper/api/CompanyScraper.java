@@ -23,8 +23,8 @@ public interface CompanyScraper {
      * <ul>
      *   <li>Fetch search and detail pages using an HTTP client</li>
      *   <li>Parse JSON envelopes and embedded HTML</li>
-     *   <li>Write raw responses to Blob Storage</li>
-     *   <li>Collect Blob paths and error messages</li>
+     *   <li>Store descriptions for downstream persistence and optionally archive raw responses</li>
+     *   <li>Collect storage references and error messages</li>
      * </ul>
      *
      * <p>If this method throws an exception, it is propagated out of the Azure Kafka trigger
@@ -36,4 +36,3 @@ public interface CompanyScraper {
      */
     ScrapeResult scrape(ScrapeContext context) throws Exception;
 }
-

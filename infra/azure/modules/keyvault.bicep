@@ -13,7 +13,6 @@ param secrets object
 
 var secretNames = [
   'AzureWebJobsStorage'
-  'azure-storage-connection-string'
   'azure-cosmos-key'
 ]
 

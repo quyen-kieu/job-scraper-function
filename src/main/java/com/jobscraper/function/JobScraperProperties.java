@@ -16,8 +16,34 @@ public class JobScraperProperties {
     private boolean enabled = true;
     private List<CompanyProperties> companies = new ArrayList<>();
     private int maxSearchPagesPerRun = 3;
-    private int maxDetailPagesPerRun = 10;
     private Duration requestDelay = Duration.ofMillis(300);
+    private String mckessonStateFacetId = "fc77e3a1ab36487f9646d14f7242dd77";
+    private String mckessonJobFamilyFacetId = "29ce91b0412201aafb7bf4bd4f169117";
+    private String mckessonCountryFacetId = "bc33aa3152ec42d4995f4791a106ed09";
+
+    public String getMckessonStateFacetId() {
+        return mckessonStateFacetId;
+    }
+
+    public void setMckessonStateFacetId(String id) {
+        this.mckessonStateFacetId = id;
+    }
+
+    public String getMckessonJobFamilyFacetId() {
+        return mckessonJobFamilyFacetId;
+    }
+
+    public void setMckessonJobFamilyFacetId(String id) {
+        this.mckessonJobFamilyFacetId = id;
+    }
+
+    public String getMckessonCountryFacetId() {
+        return mckessonCountryFacetId;
+    }
+
+    public void setMckessonCountryFacetId(String id) {
+        this.mckessonCountryFacetId = id;
+    }
 
     public String userAgent() {
         return userAgent;
@@ -74,14 +100,6 @@ public class JobScraperProperties {
         this.maxSearchPagesPerRun = maxSearchPagesPerRun;
     }
 
-    public int maxDetailPagesPerRun() {
-        return maxDetailPagesPerRun;
-    }
-
-    public void setMaxDetailPagesPerRun(int maxDetailPagesPerRun) {
-        this.maxDetailPagesPerRun = maxDetailPagesPerRun;
-    }
-
     public Duration requestDelay() {
         return requestDelay;
     }
@@ -111,4 +129,3 @@ public class JobScraperProperties {
         }
     }
 }
-

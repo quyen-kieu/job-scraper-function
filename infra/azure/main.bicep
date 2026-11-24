@@ -7,9 +7,6 @@ param location string = 'centralus'
 @description('Base name used to derive resource names (Function App, plan, storage, Cosmos, Key Vault, monitoring).')
 param baseName string = 'job-scraper-function'
 
-@description('Blob container name for raw scrape artifacts.')
-param storageContainerName string = 'job-scraper-raw'
-
 @description('Cosmos SQL database name.')
 param cosmosDatabaseName string = 'job-scraper'
 
@@ -21,6 +18,9 @@ param cosmosObservationsContainer string = 'job-observations'
 
 @description('Cosmos container name for monthly metrics.')
 param cosmosMetricsContainer string = 'monthly-metrics'
+
+@description('Cosmos container for temporary description handoffs.')
+param cosmosDescriptionHandoffContainer string = 'description-handoffs'
 
 @description('Azure AD tenant ID for Key Vault RBAC.')
 param tenantId string = subscription().tenantId
@@ -52,6 +52,15 @@ param resendSubjectPrefix string = 'Job Scraper Daily Summary'
 @description('Cron expression for the daily scrape trigger.')
 param jobScraperDailyCron string = '0 0 3 * * *'
 
+@description('McKesson Workday state/province facet ID.')
+param mckessonStateFacetId string = 'fc77e3a1ab36487f9646d14f7242dd77'
+
+@description('McKesson Workday job family group facet ID.')
+param mckessonJobFamilyFacetId string = '29ce91b0412201aafb7bf4bd4f169117'
+
+@description('McKesson Workday country facet ID.')
+param mckessonCountryFacetId string = 'bc33aa3152ec42d4995f4791a106ed09'
+
 var regionCode = location == 'centralus' ? 'cus' : take(replace(toLower(location), ' ', ''), 3)
 var storageAccountName = toLower('${take(replace(baseName, '-', ''), 10)}st${environmentName}${regionCode}')
 var cosmosAccountName = toLower('${take(replace(baseName, '-', ''), 14)}-cosmos-${environmentName}-${regionCode}')
@@ -66,7 +75,6 @@ module storage 'modules/storage.bicep' = {
   params: {
     storageAccountName: storageAccountName
     location: location
-    containerName: storageContainerName
   }
 }
 
@@ -79,6 +87,7 @@ module cosmos 'modules/cosmos.bicep' = {
     postingsContainerName: cosmosPostingsContainer
     observationsContainerName: cosmosObservationsContainer
     metricsContainerName: cosmosMetricsContainer
+    descriptionHandoffContainerName: cosmosDescriptionHandoffContainer
   }
 }
 
@@ -109,7 +118,6 @@ module keyVault 'modules/keyvault.bicep' = {
     tenantId: tenantId
     secrets: {
       AzureWebJobsStorage: storage.outputs.connectionString
-      'azure-storage-connection-string': storage.outputs.connectionString
       'azure-cosmos-key': cosmos.outputs.primaryKey
     }
   }
@@ -118,7 +126,7 @@ module keyVault 'modules/keyvault.bicep' = {
 var vaultUri = keyVault.outputs.vaultUri
 var kafkaUsernameSecretUri = '@Microsoft.KeyVault(SecretUri=${vaultUri}secrets/kafka-username/)'
 var kafkaPasswordSecretUri = '@Microsoft.KeyVault(SecretUri=${vaultUri}secrets/kafka-password/)'
-var storageConnectionStringSecretUri = '@Microsoft.KeyVault(SecretUri=${vaultUri}secrets/azure-storage-connection-string/)'
+var storageConnectionStringSecretUri = '@Microsoft.KeyVault(SecretUri=${vaultUri}secrets/AzureWebJobsStorage/)'
 var cosmosKeySecretUri = '@Microsoft.KeyVault(SecretUri=${vaultUri}secrets/azure-cosmos-key/)'
 var resendApiKeySecretUri = '@Microsoft.KeyVault(SecretUri=${vaultUri}secrets/resend-api-key/)'
 
@@ -135,6 +143,9 @@ var appSettings = [
   { name: 'JOB_SCRAPER_ENABLED', value: 'true' }
   { name: 'JOB_SCRAPER_COMPANIES_0_ID', value: 'mckesson' }
   { name: 'JOB_SCRAPER_COMPANIES_0_ENABLED', value: 'true' }
+  { name: 'JOB_SCRAPER_MCKESSON_STATE_FACET_ID', value: mckessonStateFacetId }
+  { name: 'JOB_SCRAPER_MCKESSON_JOB_FAMILY_FACET_ID', value: mckessonJobFamilyFacetId }
+  { name: 'JOB_SCRAPER_MCKESSON_COUNTRY_FACET_ID', value: mckessonCountryFacetId }
   // GM Financial: "software development" search on its Oracle Recruiting Cloud site
   // (see GmFinancialScraperConfiguration). Each company gets its own daily summary email.
   { name: 'JOB_SCRAPER_COMPANIES_1_ID', value: 'gm-financial' }
@@ -146,9 +157,8 @@ var appSettings = [
   { name: 'JOB_SCRAPER_COMPANIES_3_ID', value: 'frost-bank' }
   { name: 'JOB_SCRAPER_COMPANIES_3_ENABLED', value: 'true' }
   { name: 'JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN', value: '3' }
-  { name: 'JOB_SCRAPER_MAX_DETAIL_PAGES_PER_RUN', value: '10' }
   { name: 'JOB_SCRAPER_REQUEST_DELAY', value: 'PT0.3S' }
-  { name: 'RAW_STORAGE_MODE', value: 'blob' }
+  { name: 'RAW_STORAGE_MODE', value: 'cosmos' }
   { name: 'KAFKA_ENABLED', value: 'true' }
   { name: 'KAFKA_BOOTSTRAP_SERVERS', value: kafkaBootstrapServers }
   { name: 'KAFKA_SECURITY_PROTOCOL', value: 'SASL_SSL' }
@@ -165,9 +175,6 @@ var appSettings = [
   { name: 'KAFKA_EMAIL_CONSUMER_GROUP', value: 'job-scraper-email-consumer-group' }
   { name: 'KAFKA_USERNAME', value: kafkaUsernameSecretUri }
   { name: 'KAFKA_PASSWORD', value: kafkaPasswordSecretUri }
-  { name: 'AZURE_STORAGE_ENABLED', value: 'true' }
-  { name: 'AZURE_STORAGE_CONNECTION_STRING', value: storageConnectionStringSecretUri }
-  { name: 'AZURE_STORAGE_CONTAINER_NAME', value: storageContainerName }
   { name: 'AZURE_COSMOS_ENABLED', value: 'true' }
   { name: 'AZURE_COSMOS_ENDPOINT', value: cosmos.outputs.endpoint }
   { name: 'AZURE_COSMOS_KEY', value: cosmosKeySecretUri }
@@ -175,6 +182,7 @@ var appSettings = [
   { name: 'AZURE_COSMOS_POSTINGS_CONTAINER', value: cosmosPostingsContainer }
   { name: 'AZURE_COSMOS_OBSERVATIONS_CONTAINER', value: cosmosObservationsContainer }
   { name: 'AZURE_COSMOS_METRICS_CONTAINER', value: cosmosMetricsContainer }
+  { name: 'AZURE_COSMOS_DESCRIPTION_HANDOFF_CONTAINER', value: cosmosDescriptionHandoffContainer }
   { name: 'RESEND_ENABLED', value: 'true' }
   { name: 'RESEND_API_KEY', value: resendApiKeySecretUri }
   { name: 'RESEND_FROM_EMAIL', value: resendFromEmail }

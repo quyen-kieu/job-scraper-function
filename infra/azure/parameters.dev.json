@@ -5,7 +5,6 @@
     "environmentName": { "value": "dev" },
     "location": { "value": "centralus" },
     "baseName": { "value": "job-scraper-function" },
-    "storageContainerName": { "value": "job-scraper-raw" },
     "cosmosDatabaseName": { "value": "job-scraper" },
     "cosmosPostingsContainer": { "value": "job-postings" },
     "cosmosObservationsContainer": { "value": "job-observations" },

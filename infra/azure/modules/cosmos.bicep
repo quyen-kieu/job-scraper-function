@@ -16,8 +16,11 @@ param observationsContainerName string
 @description('Container name for monthly metrics, partitioned by /month.')
 param metricsContainerName string
 
+@description('Container name for temporary description handoffs, partitioned by /companyId.')
+param descriptionHandoffContainerName string
+
 @description('''
-Shared database-level throughput (RU/s), applied once and split across all 3 containers (none of
+Shared database-level throughput (RU/s), applied once and split across all containers (none of
 them set their own dedicated throughput, which is required for database-shared throughput to
 apply). The default 1000 RU/s matches the free-tier throughput allowance when the account is
 eligible. Monitor actual workload and throttling before changing it; additional throughput,
@@ -103,6 +106,21 @@ resource metricsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/co
         paths: ['/month']
         kind: 'Hash'
       }
+    }
+  }
+}
+
+resource descriptionHandoffContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: sqlDatabase
+  name: descriptionHandoffContainerName
+  properties: {
+    resource: {
+      id: descriptionHandoffContainerName
+      partitionKey: {
+        paths: ['/companyId']
+        kind: 'Hash'
+      }
+      defaultTtl: 2592000
     }
   }
 }

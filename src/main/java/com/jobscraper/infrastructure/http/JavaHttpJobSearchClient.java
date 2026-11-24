@@ -13,7 +13,7 @@ import java.time.Duration;
 /**
  * Implementation of {@link JobSearchHttpClient} using the JDK's {@link HttpClient}.
  *
- * <p>Honors {@link JobScraperProperties} for timeouts, retries, and user agent headers.</p>
+ * <p>Honors {@link JobScraperProperties} for timeouts and user agent headers.</p>
  */
 @Component
 public class JavaHttpJobSearchClient implements JobSearchHttpClient {
@@ -38,5 +38,17 @@ public class JavaHttpJobSearchClient implements JobSearchHttpClient {
 
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
-}
 
+    @Override
+    public HttpResponse<String> postJson(URI uri, String json) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .timeout(properties.requestTimeout())
+                .header("User-Agent", properties.userAgent())
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .build();
+
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+}

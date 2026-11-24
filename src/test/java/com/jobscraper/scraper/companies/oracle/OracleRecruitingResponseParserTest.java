@@ -53,8 +53,31 @@ class OracleRecruitingResponseParserTest {
         assertThat(SalaryRangeExtractor.extractFromText(text)).isEmpty();
     }
 
+    @Test
+    void shouldPreserveHtmlFragmentsAndEscapePlainSectionsInMixedSources() throws Exception {
+        String source = OracleRecruitingResponseParser.parseDescriptionSource(objectMapper, """
+                {"items":[{"ExternalDescriptionStr":"<p>Build <b>systems</b></p>",
+                 "ExternalResponsibilitiesStr":"Work with A & B",
+                 "ExternalQualificationsStr":"<ul><li>Java</li></ul>"}]}
+                """);
+        assertThat(source).contains("<p>Build <b>systems</b></p>", "Work with A &amp; B",
+                "<ul><li>Java</li></ul>");
+        assertThat(com.jobscraper.scraper.api.JobDescriptionText.fromHtml(source))
+                .contains("Build systems", "Work with A & B", "Java");
+    }
+
+    @Test
+    void shouldKeepPlainOracleSectionsPlainWhenNoHtmlExists() throws Exception {
+        String source = OracleRecruitingResponseParser.parseDescriptionSource(objectMapper, """
+                {"items":[{"ExternalDescriptionStr":"Build systems",
+                 "ExternalResponsibilitiesStr":"Work with A & B"}]}
+                """);
+        assertThat(source).isEqualTo("Build systems\n\nWork with A & B");
+        assertThat(com.jobscraper.scraper.api.JobDescriptionText.sourceFormat(source))
+                .isEqualTo(com.jobscraper.domain.job.DescriptionFormat.PLAIN_TEXT);
+    }
+
     static String loadFixture(String filename) throws Exception {
         return Files.readString(Paths.get("src/test/resources/fixtures/gmfinancial/" + filename));
     }
 }
-

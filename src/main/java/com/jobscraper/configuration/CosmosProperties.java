@@ -20,6 +20,7 @@ public class CosmosProperties {
     private String postingsContainer = "job-postings";
     private String observationsContainer = "job-observations";
     private String metricsContainer = "monthly-metrics";
+    private String descriptionHandoffContainer = "description-handoffs";
 
     public boolean enabled() {
         return enabled;
@@ -76,5 +77,12 @@ public class CosmosProperties {
     public void setMetricsContainer(String metricsContainer) {
         this.metricsContainer = Objects.requireNonNullElse(metricsContainer, "monthly-metrics");
     }
-}
 
+    public String descriptionHandoffContainer() {
+        return descriptionHandoffContainer;
+    }
+
+    public void setDescriptionHandoffContainer(String descriptionHandoffContainer) {
+        this.descriptionHandoffContainer = Objects.requireNonNullElse(descriptionHandoffContainer, "description-handoffs");
+    }
+}

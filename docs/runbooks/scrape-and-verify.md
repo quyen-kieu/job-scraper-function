@@ -61,7 +61,7 @@ returned. None of these checks proves inbox delivery or database persistence.
 Avoid posting logs or screenshots containing keys, account identifiers, email
 addresses, job applicant data, or other private information.
 
-## Read saved jobs and raw details
+## Read saved jobs
 
 In the Azure portal, open your Cosmos DB account, then **Data Explorer** and
 the configured database. Open `job-postings` to inspect normalized documents,
@@ -69,18 +69,34 @@ the configured database. Open `job-postings` to inspect normalized documents,
 For example, query the postings container:
 
 ```sql
-SELECT c.companyId, c.externalJobId, c.title, c.location, c.datePosted, c.url
+SELECT c.companyId, c.externalJobId, c.titleRaw, c.location, c.datePosted, c.url,
+       c.descriptionHtml, c.descriptionPlainText
 FROM c
 WHERE c.companyId = "mckesson"
 ```
 
 Use the configured database and container names if they differ from the
-defaults. Full descriptions and salary are not fields in the normalized
-posting. In your storage account, use **Storage browser** or Azure Storage
-Explorer to browse the configured raw container by company, host-local date, and run
-ID. Open the search and fetched detail files for source fields and
-descriptions. Some details are absent when the detail-page cap or a request
-failure prevented fetching them.
+defaults. `descriptionHtml` contains source HTML where available, and
+`descriptionPlainText` contains readable text. Older documents may contain only
+the legacy `description` field until they are next updated. Treat HTML as
+untrusted and sanitize it before rendering.
+Salary is not a separate field. Older documents or jobs with missing
+or failed detail requests may have no description. A successful future scrape
+after deployment can populate discovered jobs; records outside its search-page
+cap are not automatically backfilled.
+
+To migrate legacy `description` fields on records that are not revisited, set
+`AZURE_COSMOS_ENDPOINT`, `AZURE_COSMOS_KEY`, `AZURE_COSMOS_DATABASE_NAME`, and
+`AZURE_COSMOS_POSTINGS_CONTAINER` in a trusted process environment. Run
+`mvn -q compile exec:java "-Dexec.mainClass=com.jobscraper.tools.MigrateLegacyDescriptions"`
+for a read-only count. After reviewing backups and the result, add
+`"-Dexec.args=--apply"` to copy legacy text where needed and remove the old field.
+The tool uses an ETag condition to avoid overwriting concurrent changes; rerun
+if it reports conflicts. Do not expose keys in logs or shell history.
+
+The production scraper does not archive raw responses. The `description-handoffs`
+Cosmos container holds temporary source descriptions for 30 days after their
+last modification; the final posting is independent of the handoff's expiry.
 
 For local file mode, browse the ignored `output/raw` directory instead.
 See [architecture](../architecture.md#stored-data) for the layouts and

@@ -56,6 +56,10 @@ public class CosmosConfiguration {
     public CosmosContainer monthlyMetricsContainer(CosmosClient client, CosmosProperties properties) {
         return client.getDatabase(properties.databaseName()).getContainer(properties.metricsContainer());
     }
-}
 
+    @Bean
+    public CosmosContainer descriptionHandoffContainer(CosmosClient client, CosmosProperties properties) {
+        return client.getDatabase(properties.databaseName()).getContainer(properties.descriptionHandoffContainer());
+    }
+}
 

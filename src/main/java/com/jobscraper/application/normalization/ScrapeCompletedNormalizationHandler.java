@@ -213,8 +213,12 @@ public class ScrapeCompletedNormalizationHandler {
                 true,
                 ContentHasher.sha256(job.title() + "|" + job.location() + "|" + job.datePosted()),
                 SCHEMA_VERSION,
-                job.url()
+                job.url(),
+                null,
+                job.descriptionPath(),
+                job.descriptionFormat(),
+                null,
+                null
         );
     }
 }
-

@@ -22,7 +22,7 @@ public record ScrapeResult(
         List<ScrapedJob> jobs) {
 
     /**
-     * Creates a result without structured job data (only raw blob paths).
+     * Creates a result without structured job data (only raw paths).
      */
     public ScrapeResult(
             String runId,
@@ -63,4 +63,3 @@ public record ScrapeResult(
         }
     }
 }
-

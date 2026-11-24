@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  *       ({@code finder=ById;Id="..",siteNumber=..}).</li>
  * </ul>
  *
- * @param companyId the internal company ID used in Kafka messages, Blob paths, and Cosmos documents
+ * @param companyId the internal company ID used in Kafka messages and Cosmos documents
  * @param host the Oracle Cloud host name, e.g. {@code fa-exvu-saasfaprod1.fa.ocs.oraclecloud.com}
  * @param siteNumber the Candidate Experience site number, e.g. {@code CX_1}
  * @param keyword the search keyword, sent quoted exactly as the career site UI does
@@ -92,4 +92,3 @@ public record OracleRecruitingSite(String companyId, String host, String siteNum
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 }
-

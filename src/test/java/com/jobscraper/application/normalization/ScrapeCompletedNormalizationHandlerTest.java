@@ -7,6 +7,7 @@ import com.jobscraper.application.notification.DailyNotificationRequestedEvent;
 import com.jobscraper.application.notification.NotificationPosting;
 import com.jobscraper.application.persistence.PersistenceOutcome;
 import com.jobscraper.domain.job.NormalizedJobPosting;
+import com.jobscraper.domain.job.DescriptionFormat;
 import com.jobscraper.infrastructure.cosmos.JobPostingRepository;
 import com.jobscraper.scraper.api.ScrapedJob;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,6 +79,57 @@ class ScrapeCompletedNormalizationHandlerTest {
         assertThat(posting.datePosted()).isEqualTo(LocalDate.of(2026, 8, 14));
         assertThat(posting.url()).isEqualTo(job.url());
         assertThat(posting.firstSeenAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void shouldCarryDescriptionReferenceButNotTextInKafkaEvents() throws Exception {
+        ScrapedJob job = new ScrapedJob("1", "Engineer", "Remote", null, "https://x/1", null,
+                "raw/mckesson/run/description.txt", DescriptionFormat.HTML);
+        String completionJson = json(eventWithJobs(List.of(job)));
+
+        handler.handle(completionJson);
+
+        ArgumentCaptor<NormalizedJobPosting> captor = ArgumentCaptor.forClass(NormalizedJobPosting.class);
+        verify(publisher).publish(captor.capture());
+        assertThat(captor.getValue().descriptionPath()).isEqualTo(job.descriptionPath());
+        assertThat(captor.getValue().descriptionFormat()).isEqualTo(DescriptionFormat.HTML);
+        assertThat(captor.getValue().description()).isNull();
+        assertThat(captor.getValue().descriptionHtml()).isNull();
+        assertThat(captor.getValue().descriptionPlainText()).isNull();
+        assertThat(objectMapper.readTree(completionJson).path("jobs").get(0).has("description")).isFalse();
+    }
+
+    @Test
+    void shouldAcceptLegacyStructuredJobWithoutDescriptionReference() throws Exception {
+        String legacy = """
+                {"runId":"run-123","companyId":"mckesson","startedAt":"2026-08-16T11:00:00Z",
+                 "completedAt":"2026-08-16T11:05:00Z","searchPagesFetched":1,"detailPagesFetched":1,
+                 "blobPaths":[],"errors":[],"jobs":[{"externalJobId":"1","title":"Engineer",
+                 "location":"Texas","datePosted":null,"url":"https://x/1","salaryRange":null}]}
+                """;
+        assertThat(handler.handle(legacy)).isEqualTo(1);
+        ArgumentCaptor<NormalizedJobPosting> captor = ArgumentCaptor.forClass(NormalizedJobPosting.class);
+        verify(publisher).publish(captor.capture());
+        assertThat(captor.getValue().descriptionPath()).isNull();
+    }
+
+    @Test
+    void shouldNotClassifyDescriptionOnlyChangeAsUpdated() throws Exception {
+        ScrapedJob job = new ScrapedJob("1", "Engineer", "Texas", LocalDate.of(2026, 8, 14),
+                "https://x/1", null, "raw/old");
+        handler.handle(json(eventWithJobs(List.of(job))));
+        ArgumentCaptor<NormalizedJobPosting> captor = ArgumentCaptor.forClass(NormalizedJobPosting.class);
+        verify(publisher).publish(captor.capture());
+        when(postingRepository.findById("mckesson:1", "mckesson"))
+                .thenReturn(Optional.of(captor.getValue().withDescription("Old description")));
+
+        handler.handle(json(eventWithJobs(List.of(job.withDescriptionPath("raw/new")))));
+
+        ArgumentCaptor<DailyNotificationRequestedEvent> notifications =
+                ArgumentCaptor.forClass(DailyNotificationRequestedEvent.class);
+        verify(dailyNotificationPublisher, times(2)).publish(notifications.capture());
+        assertThat(notifications.getValue().changedCount()).isZero();
+        assertThat(notifications.getValue().postings().get(0).outcome()).isEqualTo(PersistenceOutcome.UNCHANGED);
     }
 
     @Test
@@ -234,4 +286,3 @@ class ScrapeCompletedNormalizationHandlerTest {
         return objectMapper.writeValueAsString(event);
     }
 }
-

@@ -7,14 +7,13 @@ import java.util.Objects;
 /**
  * Configuration properties selecting where raw scrape output is written.
  *
- * <p>Supports a local-file destination for development and manual test runs, in addition
- * to the Azure Blob Storage destination selected via {@link BlobStorageProperties}. Exactly
- * one {@link com.jobscraper.infrastructure.blob.RawScrapeStorage} bean is active at a time,
+ * <p>Supports local-file storage for development and Cosmos DB description handoffs. Exactly
+ * one {@link com.jobscraper.infrastructure.storage.RawScrapeStorage} bean is active at a time,
  * chosen by {@code raw-storage.mode}:</p>
  *
  * <ul>
  *   <li>{@code file} &mdash; writes to the local filesystem under {@link #fileRootPath()}</li>
- *   <li>{@code blob} &mdash; writes to Azure Blob Storage (requires {@code azure.storage.enabled=true})</li>
+ *   <li>{@code cosmos} &mdash; stores temporary descriptions in Cosmos DB without archiving raw responses</li>
  *   <li>anything else / unset &mdash; no-op (mock paths only, no I/O)</li>
  * </ul>
  */
@@ -40,5 +39,4 @@ public class RawStorageProperties {
         this.fileRootPath = Objects.requireNonNullElse(fileRootPath, "./output/raw");
     }
 }
-
 

@@ -1,5 +1,8 @@
 package com.jobscraper.domain.job;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Objects;
@@ -25,7 +28,30 @@ public record NormalizedJobPosting(
         boolean isActive,
         String contentHash,
         int schemaVersion,
-        String url) {
+        String url,
+        // Read old documents without writing the legacy field back to Cosmos.
+        @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) String description,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String descriptionPath,
+        @JsonInclude(JsonInclude.Include.NON_NULL) DescriptionFormat descriptionFormat,
+        String descriptionHtml,
+        String descriptionPlainText) {
+
+    public NormalizedJobPosting(String id, String companyId, String externalJobId, String titleRaw,
+                                String titleNormalized, String jobLevel, String location, LocalDate datePosted,
+                                Instant firstSeenAt, Instant lastSeenAt, boolean isActive, String contentHash,
+                                int schemaVersion, String url, String description, String descriptionPath) {
+        this(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel, location, datePosted,
+                firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion, url, description,
+                descriptionPath, null, null, null);
+    }
+
+    public NormalizedJobPosting(String id, String companyId, String externalJobId, String titleRaw,
+                                String titleNormalized, String jobLevel, String location, LocalDate datePosted,
+                                Instant firstSeenAt, Instant lastSeenAt, boolean isActive, String contentHash,
+                                int schemaVersion, String url) {
+        this(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel, location, datePosted,
+                firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion, url, null, null, null, null, null);
+    }
 
     /**
      * Creates a posting without a public URL. Also matches the wire/document shape written
@@ -46,7 +72,17 @@ public record NormalizedJobPosting(
             String contentHash,
             int schemaVersion) {
         this(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel, location, datePosted,
-                firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion, null);
+                firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion, null, null, null, null, null, null);
+    }
+
+    public NormalizedJobPosting withDescription(String text) {
+        return withDescriptions(null, text);
+    }
+
+    public NormalizedJobPosting withDescriptions(String html, String text) {
+        return new NormalizedJobPosting(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel,
+                location, datePosted, firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion,
+                url, null, null, null, html, text);
     }
 
     public NormalizedJobPosting {

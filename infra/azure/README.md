@@ -2,7 +2,7 @@
 
 Provisions the deployment boundary described in the [architecture](../../docs/architecture.md):
 one Function App and Flex Consumption plan, one Storage Account, one
-Cosmos DB account (provisioned throughput, free tier, 3 containers), one Key Vault, and
+Cosmos DB account (provisioned throughput, free tier, 4 containers), one Key Vault, and
 Application Insights/Log Analytics for monitoring.
 
 ## Prerequisites
@@ -43,7 +43,7 @@ az deployment group create `
 ## Setting real secret values
 
 `main.bicep` only creates the Key Vault secrets it can derive itself (`AzureWebJobsStorage`,
-`azure-storage-connection-string`, `azure-cosmos-key`). It deliberately does **not** declare
+`azure-cosmos-key`). It deliberately does **not** declare
 `kafka-username`, `kafka-password`, or `resend-api-key`: earlier versions created them with empty
 placeholder values, so every `az deployment group create` silently overwrote the real secrets with
 "" and broke the Kafka triggers. In CI, `deploy.yml`'s deploy-app job writes them from GitHub
@@ -69,7 +69,7 @@ The values are passed to Azure CLI as process arguments; run this on a trusted m
 log or share the commands or environment. The `--output none` option avoids printing secret values.
 The Function App resolves these as `@Microsoft.KeyVault(SecretUri=...)` app settings at runtime
 via its system-assigned managed identity (granted `Key Vault Secrets User` by `main.bicep`). No
-Java code change is required — `KafkaProperties`, `CosmosProperties`, `BlobStorageProperties`, and
+Java code change is required — `KafkaProperties`, `CosmosProperties`, and
 `ResendProperties` only ever see the resolved string value, identical to a plain app setting.
 
 **Known limitation:** Key Vault reference resolution requires the RBAC role assignment to have
@@ -87,9 +87,19 @@ rejects. The fix: `keyvault.bicep` never takes the Function App's principal id a
 
 ## Scope decisions
 
-- Cosmos and Blob Storage keep key/connection-string auth (Key Vault only changes *where* the
-  secret is stored, not *how* the app authenticates). Adopting managed-identity/RBAC-based Cosmos
-  and Storage access is a hardening follow-up requiring a Java code change.
+- Cosmos uses key authentication via Key Vault. Functions requires its own host storage account
+  and deployment container; the scraper does not use Blob Storage. The separate Confluent
+  Terraform state backend also uses Azure Blob Storage.
+- Deploy the 30-day `description-handoffs` container before running the new scraper. For an
+  existing Blob-backed deployment, pause all scrape producers, drain the scraper, normalizer,
+  and persistence consumer groups, and pause those consumers during the version switch. The
+  deployment workflow applies Bicep settings before deploying the new code, so it does not
+  perform this cutover safely by itself. Ensure the pause survives the Bicep settings update;
+  app-setting-based disable flags may be replaced by the template. Deploy the new code, verify
+  its settings and registered functions, then resume consumers and producers. Old
+  Blob-referencing events cannot be replayed by the new code.
+  Removing a container from Bicep does not delete existing raw containers in incremental deploys.
+  Verify the new pipeline and retain or migrate any needed raw data before deleting those containers.
 - `pom.xml` uses generic local defaults for `functionAppName`, `appServicePlanName`, and
   `azureResourceGroup`. CI overrides `functionAppName` when packaging and deploys with
   `az functionapp deployment source config-zip` instead of the plugin's `deploy` goal. Manual
@@ -100,7 +110,7 @@ rejects. The fix: `keyvault.bicep` never takes the Function App's principal id a
 ## Cost considerations
 
 The Cosmos module requests account-level free tier and provisions a shared, manual
-database throughput of 1,000 RU/s across the three containers. Microsoft documents an allowance
+database throughput of 1,000 RU/s across the four containers. Microsoft documents an allowance
 of 1,000 RU/s and 25 GB per free-tier account, with at most one such account per subscription.
 Check eligibility and the account's status before deployment; if free tier is unavailable, the
 template must be changed before provisioning a non-free account. Provisioned throughput above

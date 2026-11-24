@@ -2,9 +2,11 @@ package com.jobscraper.scraper.companies.frostbank;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobscraper.function.JobScraperProperties;
-import com.jobscraper.infrastructure.blob.RawScrapeStorage;
+import com.jobscraper.infrastructure.storage.RawScrapeStorage;
 import com.jobscraper.scraper.api.CompanyScraper;
+import com.jobscraper.scraper.api.DescriptionReference;
 import com.jobscraper.scraper.api.JobSearchHttpClient;
+import com.jobscraper.scraper.api.JobDescriptionText;
 import com.jobscraper.scraper.api.SalaryRangeExtractor;
 import com.jobscraper.scraper.api.ScrapeContext;
 import com.jobscraper.scraper.api.ScrapeResult;
@@ -52,19 +54,23 @@ public class FrostBankScraper implements CompanyScraper {
         List<String> errors = new ArrayList<>();
         Map<String, FrostBankPageParser.Job> jobs = new LinkedHashMap<>();
         Map<String, String> salaries = new HashMap<>();
+        Map<String, DescriptionReference> descriptions = new HashMap<>();
         int pagesFetched = fetchSearchPages(context, paths, errors, jobs);
-        int detailsFetched = fetchDetails(context, paths, errors, jobs, salaries, pagesFetched > 0);
+        int detailsFetched = fetchDetails(context, paths, errors, jobs, salaries, descriptions, pagesFetched > 0);
 
         Instant completedAt = Instant.now();
         List<ScrapedJob> scrapedJobs = jobs.values().stream()
                 .map(job -> new ScrapedJob(job.id(), job.title(), job.location(), job.postedDate(),
-                        job.url().toString(), salaries.get(job.id())))
+                        job.url().toString(), salaries.get(job.id())).withDescriptionReference(descriptions.get(job.id())))
                 .toList();
         try {
             RunSummary summary = new RunSummary(context.runId(), context.companyId(), startedAt, completedAt,
                     pagesFetched, detailsFetched, scrapedJobs, errors);
             paths.add(storage.writeRunSummary(context.companyId(), context.runId(),
                     objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(summary)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
         } catch (Exception e) {
             errors.add("Run summary write failed: " + e.getMessage());
         }
@@ -92,6 +98,9 @@ public class FrostBankScraper implements CompanyScraper {
             }
             try {
                 paths.add(storage.writeSearchPage(context.companyId(), context.runId(), page, search.rawSearchJson()));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
             } catch (Exception e) {
                 errors.add("Search page " + page + " storage write failed: " + e.getMessage());
             }
@@ -110,18 +119,13 @@ public class FrostBankScraper implements CompanyScraper {
 
     private int fetchDetails(ScrapeContext context, List<String> paths, List<String> errors,
                              Map<String, FrostBankPageParser.Job> jobs, Map<String, String> salaries,
-                             boolean hasPreviousRequest) throws InterruptedException {
+                             Map<String, DescriptionReference> descriptions, boolean hasPreviousRequest) throws InterruptedException {
         int fetched = 0;
-        int attempted = 0;
         for (FrostBankPageParser.Job job : jobs.values()) {
-            if (attempted >= properties.maxDetailPagesPerRun()) {
-                break;
-            }
             if (hasPreviousRequest) {
                 delay();
             }
             hasPreviousRequest = true;
-            attempted++;
             String html;
             try {
                 html = getBody(job.url());
@@ -135,14 +139,29 @@ public class FrostBankScraper implements CompanyScraper {
             fetched++;
             try {
                 paths.add(storage.writeJobDetail(context.companyId(), context.runId(), job.id(), html));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
             } catch (Exception e) {
                 errors.add("Detail storage write failed for job " + job.id() + ": " + e.getMessage());
             }
             try {
-                SalaryRangeExtractor.extract(parser.parseDescription(html, job.id()))
+                String descriptionHtml = parser.parseDescription(html, job.id());
+                SalaryRangeExtractor.extract(descriptionHtml)
                         .ifPresent(salary -> salaries.put(job.id(), salary));
+                String text = JobDescriptionText.fromHtml(descriptionHtml);
+                if (text.isBlank()) {
+                    throw new IllegalArgumentException("Empty job description");
+                }
+                String path = java.util.Objects.requireNonNull(
+                        storage.writeDescription(context.companyId(), context.runId(), job.id(), descriptionHtml),
+                        "Description storage returned no path");
+                descriptions.put(job.id(), new DescriptionReference(path, JobDescriptionText.sourceFormat(descriptionHtml)));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
             } catch (Exception e) {
-                errors.add("Detail parse failed for job " + job.id() + ": " + e.getMessage());
+                errors.add("Description processing failed for job " + job.id() + ": " + e.getMessage());
             }
         }
         return fetched;

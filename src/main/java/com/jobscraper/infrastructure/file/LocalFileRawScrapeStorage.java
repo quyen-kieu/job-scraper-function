@@ -1,7 +1,8 @@
 package com.jobscraper.infrastructure.file;
 
 import com.jobscraper.configuration.RawStorageProperties;
-import com.jobscraper.infrastructure.blob.RawScrapeStorage;
+import com.jobscraper.infrastructure.storage.RawScrapeStorage;
+import com.jobscraper.infrastructure.storage.DescriptionStoragePaths;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -48,6 +49,28 @@ public class LocalFileRawScrapeStorage implements RawScrapeStorage {
     public String writeJobDetail(String companyId, String runId, String externalJobId, String html) throws IOException {
         Path path = runDirectory(companyId, runId).resolve("job-" + externalJobId + ".html");
         return write(path, html);
+    }
+
+    @Override
+    public String writeDescription(String companyId, String runId, String externalJobId, String text) throws IOException {
+        DescriptionStoragePaths.validateCompany(companyId);
+        DescriptionStoragePaths.validateRunId(runId);
+        return write(runDirectory(companyId, runId).resolve(DescriptionStoragePaths.fileName(externalJobId, text)), text);
+    }
+
+    @Override
+    public String readDescription(String companyId, String externalJobId, String path) throws IOException {
+        DescriptionStoragePaths.validateCompany(companyId);
+        Path companyRoot = rootPath.resolve(companyId).toRealPath();
+        Path target = Path.of(path).toRealPath();
+        String name = target.getFileName().toString();
+        if (!target.startsWith(companyRoot)
+                || !DescriptionStoragePaths.validFileName(externalJobId, name)) {
+            throw new IllegalArgumentException("Invalid description file path");
+        }
+        String text = Files.readString(target, StandardCharsets.UTF_8);
+        DescriptionStoragePaths.validateContent(externalJobId, name, text);
+        return text;
     }
 
     @Override

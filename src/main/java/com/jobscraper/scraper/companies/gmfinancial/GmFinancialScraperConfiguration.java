@@ -2,7 +2,7 @@ package com.jobscraper.scraper.companies.gmfinancial;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobscraper.function.JobScraperProperties;
-import com.jobscraper.infrastructure.blob.RawScrapeStorage;
+import com.jobscraper.infrastructure.storage.RawScrapeStorage;
 import com.jobscraper.scraper.api.JobSearchHttpClient;
 import com.jobscraper.scraper.companies.oracle.OracleRecruitingScraper;
 import com.jobscraper.scraper.companies.oracle.OracleRecruitingSite;

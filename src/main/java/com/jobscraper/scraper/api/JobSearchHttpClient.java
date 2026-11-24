@@ -18,5 +18,14 @@ public interface JobSearchHttpClient {
      * @throws Exception any network or HTTP error
      */
     HttpResponse<String> get(URI uri) throws Exception;
-}
 
+    /**
+     * Performs an HTTP POST with a JSON body.
+     *
+     * @param uri the URI to fetch
+     * @param json the JSON request body
+     * @return the HTTP response with response body as a string
+     * @throws Exception any network or HTTP error
+     */
+    HttpResponse<String> postJson(URI uri, String json) throws Exception;
+}

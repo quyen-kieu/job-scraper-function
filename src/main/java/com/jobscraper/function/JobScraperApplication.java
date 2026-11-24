@@ -1,6 +1,5 @@
 package com.jobscraper.function;
 
-import com.jobscraper.configuration.BlobStorageProperties;
 import com.jobscraper.configuration.CosmosProperties;
 import com.jobscraper.configuration.KafkaProperties;
 import com.jobscraper.configuration.RawStorageProperties;
@@ -13,7 +12,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties({
         JobScraperProperties.class,
         KafkaProperties.class,
-        BlobStorageProperties.class,
         CosmosProperties.class,
         ResendProperties.class,
         RawStorageProperties.class

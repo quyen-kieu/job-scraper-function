@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobscraper.configuration.KafkaProperties;
 import com.jobscraper.domain.job.NormalizedJobPosting;
+import com.jobscraper.infrastructure.kafka.KafkaSendAcknowledgement;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -42,7 +43,7 @@ public class KafkaNormalizedPostingPublisher implements NormalizedPostingPublish
                             posting.id(),
                             payload
                     );
-            producer.send(record);
+            KafkaSendAcknowledgement.send(producer, record);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Failed to serialize normalized job posting", ex);
         }

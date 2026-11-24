@@ -1,18 +1,15 @@
-package com.jobscraper.infrastructure.blob;
+package com.jobscraper.infrastructure.storage;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 /**
  * No-op implementation of {@link RawScrapeStorage} for local/dev environments.
  *
- * <p>Used when Azure Blob Storage is disabled and local-file storage
- * ({@code raw-storage.mode=file}) is not selected either. Simply logs and returns mock paths
- * for testing the full pipeline without external dependencies.</p>
+ * <p>Used when neither local files nor Cosmos handoffs are selected. Raw writes return mock
+ * paths; description operations fail explicitly.</p>
  */
 @Component
-@ConditionalOnProperty(prefix = "azure.storage", name = "enabled", havingValue = "false", matchIfMissing = true)
 @Conditional(NotFileRawStorageModeCondition.class)
 public class NoOpRawScrapeStorage implements RawScrapeStorage {
 
@@ -29,9 +26,18 @@ public class NoOpRawScrapeStorage implements RawScrapeStorage {
     }
 
     @Override
+    public String writeDescription(String companyId, String runId, String externalJobId, String text) {
+        throw new IllegalStateException("Description storage requires Cosmos DB or file mode");
+    }
+
+    @Override
+    public String readDescription(String companyId, String externalJobId, String path) {
+        throw new IllegalStateException("Description storage requires Cosmos DB or file mode");
+    }
+
+    @Override
     public String writeRunSummary(String companyId, String runId, String json) {
         // Return a mock path without actually writing
         return String.format("mock://summary/%s/%s/run-summary", companyId, runId);
     }
 }
-

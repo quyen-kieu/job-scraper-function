@@ -1,8 +1,9 @@
 package com.jobscraper.scraper.companies.oracle;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jobscraper.domain.job.DescriptionFormat;
 import com.jobscraper.function.JobScraperProperties;
-import com.jobscraper.infrastructure.blob.RawScrapeStorage;
+import com.jobscraper.infrastructure.storage.RawScrapeStorage;
 import com.jobscraper.scraper.api.JobSearchHttpClient;
 import com.jobscraper.scraper.api.ScrapeContext;
 import com.jobscraper.scraper.api.ScrapeResult;
@@ -52,7 +53,6 @@ class OracleRecruitingScraperTest {
         properties = new JobScraperProperties();
         properties.setRequestDelay(Duration.ZERO);
         properties.setMaxSearchPagesPerRun(3);
-        properties.setMaxDetailPagesPerRun(10);
         scraper = new OracleRecruitingScraper(
                 SITE, httpClient, storage, new ObjectMapper().findAndRegisterModules(), properties);
 
@@ -60,6 +60,8 @@ class OracleRecruitingScraperTest {
                 .thenAnswer(inv -> "mock://search/" + inv.getArgument(2));
         lenient().when(storage.writeJobDetail(anyString(), anyString(), anyString(), anyString()))
                 .thenAnswer(inv -> "mock://detail/" + inv.getArgument(2));
+        lenient().when(storage.writeDescription(anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(inv -> "description/" + inv.getArgument(2));
         lenient().when(storage.writeRunSummary(anyString(), anyString(), anyString()))
                 .thenReturn("mock://summary");
     }
@@ -92,6 +94,10 @@ class OracleRecruitingScraperTest {
         assertThat(actuarialManager.title()).isEqualTo("Actuarial Manager");
         assertThat(actuarialManager.datePosted()).isEqualTo(LocalDate.of(2026, 10, 28));
         assertThat(actuarialManager.salaryRange()).isEqualTo("$115,000-$213,000");
+        assertThat(actuarialManager.descriptionPath()).isEqualTo("description/261186");
+        assertThat(actuarialManager.descriptionFormat()).isEqualTo(DescriptionFormat.HTML);
+        verify(storage).writeDescription(eq("gm-financial"), eq("run-1"), eq("261186"),
+                org.mockito.ArgumentMatchers.argThat(text -> text.contains("$115,000-$213,000") && text.contains("<")));
         assertThat(actuarialManager.url()).isEqualTo(
                 "https://fa-exvu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/261186");
         assertThat(result.jobs().get(0).salaryRange()).isNull();
@@ -103,15 +109,18 @@ class OracleRecruitingScraperTest {
     @Test
     void shouldPageUntilSearchPageCapAndDeduplicateRequisitions() throws Exception {
         properties.setMaxSearchPagesPerRun(2);
-        properties.setMaxDetailPagesPerRun(0);
         // Real fixture declares TotalJobsCount=53, so more pages exist than the cap allows.
         HttpResponse<String> search = response(loadFixture("search-results-page1.json"));
+        HttpResponse<String> detail = response(loadFixture("job-detail-without-salary.json"));
         when(httpClient.get(searchUri())).thenReturn(search);
+        when(httpClient.get(detailUriFor("261197"))).thenReturn(detail);
+        when(httpClient.get(detailUriFor("261186"))).thenReturn(detail);
+        when(httpClient.get(detailUriFor("261150"))).thenReturn(detail);
 
         ScrapeResult result = scraper.scrape(new ScrapeContext("run-2", "gm-financial", Instant.now()));
 
         assertThat(result.searchPagesFetched()).isEqualTo(2);
-        assertThat(result.detailPagesFetched()).isZero();
+        assertThat(result.detailPagesFetched()).isEqualTo(3);
         assertThat(result.jobs()).hasSize(3);
         verify(httpClient).get(SITE.searchUri(0, OracleRecruitingScraper.PAGE_SIZE));
         verify(httpClient).get(SITE.searchUri(3, OracleRecruitingScraper.PAGE_SIZE));
@@ -136,6 +145,50 @@ class OracleRecruitingScraperTest {
         assertThat(result.errors().get(0)).contains("261197").contains("connection reset");
         assertThat(result.errors().get(1)).contains("261150").contains("HTTP 503");
         assertThat(result.jobs().get(1).salaryRange()).isEqualTo("$115,000-$213,000");
+    }
+
+    @Test
+    void shouldStorePlainTextWhenOracleReturnsNoHtml() throws Exception {
+        HttpResponse<String> search = response("""
+                {"items":[{"TotalJobsCount":1,"requisitionList":
+                [{"Id":"123","Title":"Engineer","PrimaryLocation":"TX"}]}]}
+                """);
+        HttpResponse<String> detail = response("""
+                {"items":[{"ExternalDescriptionStr":"Build systems",
+                "ExternalResponsibilitiesStr":"Work with people"}]}
+                """);
+        when(httpClient.get(searchUri())).thenReturn(search);
+        when(httpClient.get(detailUriFor("123"))).thenReturn(detail);
+
+        ScrapeResult result = scraper.scrape(new ScrapeContext("run-1", "gm-financial", Instant.now()));
+
+        assertThat(result.jobs().get(0).descriptionFormat()).isEqualTo(DescriptionFormat.PLAIN_TEXT);
+        verify(storage).writeDescription("gm-financial", "run-1", "123", "Build systems\n\nWork with people");
+    }
+
+    @Test
+    void shouldAttemptMoreThanTenDetailsDespiteFailuresAndRawStorageErrors() throws Exception {
+        String jobs = java.util.stream.IntStream.range(0, 12)
+                .mapToObj(i -> "{\"Id\":\"" + (1000 + i) + "\",\"Title\":\"Engineer\",\"PrimaryLocation\":\"TX\"}")
+                .collect(java.util.stream.Collectors.joining(","));
+        HttpResponse<String> search = response("{\"items\":[{\"TotalJobsCount\":12,\"requisitionList\":[" + jobs + "]}]}");
+        HttpResponse<String> detail = response(loadFixture("job-detail-without-salary.json"));
+        HttpResponse<String> failure = errorResponse(503);
+        when(httpClient.get(searchUri())).thenReturn(search);
+        for (int i = 0; i < 12; i++) {
+            when(httpClient.get(detailUriFor(Integer.toString(1000 + i)))).thenReturn(i == 0 ? failure : detail);
+        }
+        when(storage.writeJobDetail(eq("gm-financial"), eq("run-1"), eq("1001"), anyString()))
+                .thenThrow(new IllegalStateException("raw storage unavailable"));
+
+        ScrapeResult result = scraper.scrape(new ScrapeContext("run-1", "gm-financial", Instant.now()));
+
+        assertThat(result.jobs()).hasSize(12);
+        assertThat(result.detailPagesFetched()).isEqualTo(11);
+        assertThat(result.jobs().get(1).descriptionPath()).isEqualTo("description/1001");
+        assertThat(result.jobs().get(11).descriptionPath()).isEqualTo("description/1011");
+        assertThat(result.errors()).hasSize(2);
+        verify(httpClient).get(detailUriFor("1011"));
     }
 
     @Test
@@ -180,10 +233,6 @@ class OracleRecruitingScraperTest {
         return response;
     }
 }
-
-
-
-
 
 
 

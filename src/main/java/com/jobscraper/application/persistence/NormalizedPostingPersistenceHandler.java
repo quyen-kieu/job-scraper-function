@@ -2,9 +2,12 @@ package com.jobscraper.application.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobscraper.domain.job.JobObservation;
+import com.jobscraper.domain.job.DescriptionFormat;
 import com.jobscraper.domain.job.NormalizedJobPosting;
 import com.jobscraper.infrastructure.cosmos.JobObservationRepository;
 import com.jobscraper.infrastructure.cosmos.JobPostingRepository;
+import com.jobscraper.infrastructure.storage.RawScrapeStorage;
+import com.jobscraper.scraper.api.JobDescriptionText;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -34,24 +37,28 @@ public class NormalizedPostingPersistenceHandler {
     private final ObjectMapper objectMapper;
     private final JobPostingRepository postingRepository;
     private final JobObservationRepository observationRepository;
+    private final RawScrapeStorage rawStorage;
     private final Clock clock;
 
     @Autowired
     public NormalizedPostingPersistenceHandler(
             ObjectMapper objectMapper,
             JobPostingRepository postingRepository,
-            JobObservationRepository observationRepository) {
-        this(objectMapper, postingRepository, observationRepository, Clock.systemUTC());
+            JobObservationRepository observationRepository,
+            RawScrapeStorage rawStorage) {
+        this(objectMapper, postingRepository, observationRepository, rawStorage, Clock.systemUTC());
     }
 
     NormalizedPostingPersistenceHandler(
             ObjectMapper objectMapper,
             JobPostingRepository postingRepository,
             JobObservationRepository observationRepository,
+            RawScrapeStorage rawStorage,
             Clock clock) {
         this.objectMapper = objectMapper;
         this.postingRepository = postingRepository;
         this.observationRepository = observationRepository;
+        this.rawStorage = rawStorage;
         this.clock = clock;
     }
 
@@ -73,6 +80,31 @@ public class NormalizedPostingPersistenceHandler {
     public NormalizedJobPosting handle(String json) throws Exception {
         NormalizedJobPosting posting = objectMapper.readValue(json, NormalizedJobPosting.class);
 
+        if (posting.descriptionPath() != null) {
+            String description = rawStorage.readDescription(
+                    posting.companyId(), posting.externalJobId(), posting.descriptionPath());
+            if (description == null || description.isBlank()) {
+                throw new IllegalStateException("Stored description is empty for " + posting.id());
+            }
+            String html = posting.descriptionFormat() == DescriptionFormat.HTML ? description : null;
+            String text = posting.descriptionFormat() != null
+                    ? JobDescriptionText.fromHtml(description) : description;
+            if (text.isBlank()) {
+                throw new IllegalStateException("Stored description has no readable text for " + posting.id());
+            }
+            posting = posting.withDescriptions(html, text);
+        } else if (posting.description() == null && posting.descriptionPlainText() == null
+                && posting.descriptionHtml() == null) {
+            var existing = postingRepository.findById(posting.id(), posting.companyId());
+            String html = existing.map(NormalizedJobPosting::descriptionHtml).orElse(null);
+            String text = existing.map(previous -> previous.descriptionPlainText() != null
+                    ? previous.descriptionPlainText() : previous.description()).orElse(null);
+            posting = posting.withDescriptions(html, text);
+        } else {
+            String text = posting.descriptionPlainText() != null
+                    ? posting.descriptionPlainText() : posting.description();
+            posting = posting.withDescriptions(posting.descriptionHtml(), text);
+        }
         postingRepository.upsert(posting);
 
         LocalDate scrapeDate = LocalDate.now(clock.withZone(ZoneOffset.UTC));

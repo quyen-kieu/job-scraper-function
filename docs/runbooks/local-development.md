@@ -4,8 +4,8 @@
 
 - Java 21, Maven, and Azure Functions Core Tools v4.
 - Azurite or another appropriate Azure Storage connection for the Functions
-  host. Kafka is needed for the complete event pipeline; Azure Blob Storage,
-  Cosmos DB, and Resend are needed when their integrations are enabled.
+  host. Kafka is needed for the complete event pipeline; Cosmos DB and Resend
+  are needed when their integrations are enabled.
 - Credentials and resource names must come from your own environment. Never
   commit `local.settings.json`, actual credentials, email addresses, or local
   output. It is an ignored file and can contain sensitive values.
@@ -22,9 +22,11 @@ mvn clean package
 Edit the ignored `local.settings.json` locally. Set `AzureWebJobsStorage` for
 the Functions host and supply the Kafka bootstrap server and credentials for
 your own Kafka cluster. The sample selects local raw storage
-(`RAW_STORAGE_MODE=file`) and disables the Azure Blob, Cosmos, and Resend
+(`RAW_STORAGE_MODE=file`) and disables the Cosmos and Resend
 integrations. Enable and configure each integration if you need to exercise
 it. Do not paste the resulting file into issues, logs, or chats.
+Use `RAW_STORAGE_MODE=cosmos` and enable Cosmos to exercise the cloud handoff
+container; it must exist with a 30-day TTL before the scraper runs.
 When Cosmos is disabled, no-op repositories discard writes and every posting
 is classified as new. When Resend is disabled, notification summaries are logged
 rather than emailed.
