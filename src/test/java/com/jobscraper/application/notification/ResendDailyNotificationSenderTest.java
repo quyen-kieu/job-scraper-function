@@ -137,6 +137,30 @@ class ResendDailyNotificationSenderTest {
     }
 
     @Test
+    void buildRequestUsesCvsDisplayName() {
+        DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
+                "run-cvs", LocalDate.of(2026, 11, 25), 1, 0, 0, 0, List.of(),
+                "cvs", List.of());
+        CreateEmailOptions request = new ResendDailyNotificationSender(resendClient, properties).buildRequest(event);
+        assertThat(request.getSubject()).contains("CVS Health");
+        assertThat(request.getText()).startsWith("Company: CVS Health");
+        assertThat(request.getHtml()).contains("Job postings &ndash; CVS Health");
+    }
+
+    @Test
+    void buildRequestUsesCitiAndFannieMaeDisplayNames() {
+        for (var entry : java.util.Map.of("citi", "Citi", "fannie-mae", "Fannie Mae").entrySet()) {
+            DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
+                    "run-" + entry.getKey(), LocalDate.of(2026, 11, 25), 1, 0, 0, 0, List.of(),
+                    entry.getKey(), List.of());
+            CreateEmailOptions request = new ResendDailyNotificationSender(resendClient, properties).buildRequest(event);
+            assertThat(request.getSubject()).contains(entry.getValue());
+            assertThat(request.getText()).startsWith("Company: " + entry.getValue());
+            assertThat(request.getHtml()).contains("Job postings &ndash; " + entry.getValue());
+        }
+    }
+
+    @Test
     void buildRequestEscapesHtmlAndOnlyLinksHttpUrls() {
         DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
                 "run-1", LocalDate.of(2026, 8, 23), 1, 1, 0, 0, List.of(), "mckesson",

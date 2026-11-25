@@ -61,6 +61,49 @@ param mckessonJobFamilyFacetId string = '29ce91b0412201aafb7bf4bd4f169117'
 @description('McKesson Workday country facet ID.')
 param mckessonCountryFacetId string = 'bc33aa3152ec42d4995f4791a106ed09'
 
+@description('Frost Bank Workday job family facet ID.')
+param frostBankJobFamilyFacetId string = '3a9cae9f1324015f492308c79dc96d35'
+
+@description('Frost Bank Workday location hierarchy facet IDs.')
+param frostBankLocationFacetIds array = [
+  '8fe73009103a424c89e0c6c010a6d8f3'
+  '58c99fe2f997418f8c54b3ebcf1b6a5d'
+]
+
+@description('Citi Workday job family group facet ID.')
+param citiJobFamilyFacetId string = 'e32326e1708d01575bddff0c120102c1'
+
+@description('Citi Workday worker subtype facet ID.')
+param citiWorkerSubtypeFacetId string = 'e32326e1708d01289a50257249019cdd'
+
+@description('Citi Workday country facet ID.')
+param citiCountryFacetId string = 'bc33aa3152ec42d4995f4791a106ed09'
+
+@description('Citi Workday state/province facet ID.')
+param citiStateFacetId string = 'fc77e3a1ab36487f9646d14f7242dd77'
+
+@description('Fannie Mae Workday remote type facet ID.')
+param fannieMaeRemoteTypeFacetId string = 'bf1dc34adb121001727a83cb88650000'
+
+@description('Fannie Mae Workday job family group facet ID.')
+param fannieMaeJobFamilyFacetId string = 'bf1dc34adb12100175ce6a6921f70000'
+
+@description('Fannie Mae Workday location facet ID.')
+param fannieMaeLocationFacetId string = '464222325cc3100210ee7e4b71320000'
+
+@description('CVS Workday job family group facet ID.')
+param cvsJobFamilyFacetId string = 'e65dbadf6a50100168ed86fe4cf50001'
+
+@description('CVS Workday location facet IDs.')
+param cvsLocationFacetIds array = [
+  '69b7f7384b5e1008e9c744772f180000'
+  'e75b3cfda6d41000edbef9d1f17b0000'
+  'e75b3cfda6d41000edbdcbb1c2b50000'
+  'e75b3cfda6d41000edbc9e0488440000'
+  'e75b3cfda6d41000edc098b35b130000'
+  'e75b3cfda6d41000edc32657f9160000'
+]
+
 var regionCode = location == 'centralus' ? 'cus' : take(replace(toLower(location), ' ', ''), 3)
 var storageAccountName = toLower('${take(replace(baseName, '-', ''), 10)}st${environmentName}${regionCode}')
 var cosmosAccountName = toLower('${take(replace(baseName, '-', ''), 14)}-cosmos-${environmentName}-${regionCode}')
@@ -153,9 +196,27 @@ var appSettings = [
   // First Citizens Bank: Information Technology jobs, newest first.
   { name: 'JOB_SCRAPER_COMPANIES_2_ID', value: 'first-citizens' }
   { name: 'JOB_SCRAPER_COMPANIES_2_ENABLED', value: 'true' }
-  // Frost Bank: Technology & Digital category.
+  // Frost Bank: Technology & Digital and selected Workday locations.
   { name: 'JOB_SCRAPER_COMPANIES_3_ID', value: 'frost-bank' }
   { name: 'JOB_SCRAPER_COMPANIES_3_ENABLED', value: 'true' }
+  { name: 'JOB_SCRAPER_FROST_BANK_JOB_FAMILY_FACET_ID', value: frostBankJobFamilyFacetId }
+  { name: 'JOB_SCRAPER_FROST_BANK_LOCATION_FACET_IDS', value: join(frostBankLocationFacetIds, ',') }
+  // CVS Health: selected Workday job family and locations.
+  { name: 'JOB_SCRAPER_COMPANIES_4_ID', value: 'cvs' }
+  { name: 'JOB_SCRAPER_COMPANIES_4_ENABLED', value: 'true' }
+  { name: 'JOB_SCRAPER_CVS_JOB_FAMILY_FACET_ID', value: cvsJobFamilyFacetId }
+  { name: 'JOB_SCRAPER_CVS_LOCATION_FACET_IDS', value: join(cvsLocationFacetIds, ',') }
+  { name: 'JOB_SCRAPER_COMPANIES_5_ID', value: 'citi' }
+  { name: 'JOB_SCRAPER_COMPANIES_5_ENABLED', value: 'true' }
+  { name: 'JOB_SCRAPER_CITI_JOB_FAMILY_FACET_ID', value: citiJobFamilyFacetId }
+  { name: 'JOB_SCRAPER_CITI_WORKER_SUBTYPE_FACET_ID', value: citiWorkerSubtypeFacetId }
+  { name: 'JOB_SCRAPER_CITI_COUNTRY_FACET_ID', value: citiCountryFacetId }
+  { name: 'JOB_SCRAPER_CITI_STATE_FACET_ID', value: citiStateFacetId }
+  { name: 'JOB_SCRAPER_COMPANIES_6_ID', value: 'fannie-mae' }
+  { name: 'JOB_SCRAPER_COMPANIES_6_ENABLED', value: 'true' }
+  { name: 'JOB_SCRAPER_FANNIE_MAE_REMOTE_TYPE_FACET_ID', value: fannieMaeRemoteTypeFacetId }
+  { name: 'JOB_SCRAPER_FANNIE_MAE_JOB_FAMILY_FACET_ID', value: fannieMaeJobFamilyFacetId }
+  { name: 'JOB_SCRAPER_FANNIE_MAE_LOCATION_FACET_ID', value: fannieMaeLocationFacetId }
   { name: 'JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN', value: '3' }
   { name: 'JOB_SCRAPER_REQUEST_DELAY', value: 'PT0.3S' }
   { name: 'RAW_STORAGE_MODE', value: 'cosmos' }

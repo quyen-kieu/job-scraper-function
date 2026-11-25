@@ -1,4 +1,4 @@
-package com.jobscraper.scraper.companies.mckesson;
+package com.jobscraper.scraper.companies.workday;
 
 import com.jobscraper.scraper.api.ScrapedJob;
 
@@ -8,11 +8,11 @@ import java.util.Objects;
 
 /**
  * Structured run-summary content written via {@code RawScrapeStorage.writeRunSummary}
- * for one McKesson scrape run.
+ * for one Workday scrape run.
  *
  * <p>This is the human-readable result file written alongside raw search and detail responses.</p>
  */
-public record McKessonRunSummary(
+public record WorkdayRunSummary(
         String runId,
         String companyId,
         Instant startedAt,
@@ -22,7 +22,7 @@ public record McKessonRunSummary(
         List<ScrapedJob> jobs,
         List<String> errors) {
 
-    public McKessonRunSummary {
+    public WorkdayRunSummary {
         Objects.requireNonNull(jobs, "jobs must not be null");
         Objects.requireNonNull(errors, "errors must not be null");
         jobs = List.copyOf(jobs);

@@ -100,6 +100,10 @@ rejects. The fix: `keyvault.bicep` never takes the Function App's principal id a
   Blob-referencing events cannot be replayed by the new code.
   Removing a container from Bicep does not delete existing raw containers in incremental deploys.
   Verify the new pipeline and retain or migrate any needed raw data before deleting those containers.
+- On the first deployment of a new company scraper, Bicep enables its company setting before
+  the workflow deploys the new package. Avoid scheduled or manual scrapes during that window;
+  if deployment fails, the old package cannot process commands for the new company. Verify the
+  package deployment before triggering it.
 - `pom.xml` uses generic local defaults for `functionAppName`, `appServicePlanName`, and
   `azureResourceGroup`. CI overrides `functionAppName` when packaging and deploys with
   `az functionapp deployment source config-zip` instead of the plugin's `deploy` goal. Manual

@@ -12,7 +12,10 @@ final class CompanyDisplayNames {
             "mckesson", "McKesson",
             "gm-financial", "GM Financial",
             "first-citizens", "First Citizens Bank",
-            "frost-bank", "Frost Bank");
+            "frost-bank", "Frost Bank",
+            "cvs", "CVS Health",
+            "citi", "Citi",
+            "fannie-mae", "Fannie Mae");
 
     private CompanyDisplayNames() {
     }

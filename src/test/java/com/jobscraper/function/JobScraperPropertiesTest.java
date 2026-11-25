@@ -87,6 +87,50 @@ class JobScraperPropertiesTest {
                 });
     }
 
+    @Test
+    void bindsCvsFacetsFromEnvironmentSettings() {
+        contextRunner.withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                new SystemEnvironmentPropertySource("test-env", Map.of(
+                        "JOB_SCRAPER_CVS_JOB_FAMILY_FACET_ID", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "JOB_SCRAPER_CVS_LOCATION_FACET_IDS",
+                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,cccccccccccccccccccccccccccccccc"))))
+                .run(context -> {
+                    JobScraperProperties properties = context.getBean(JobScraperProperties.class);
+                    assertThat(properties.getCvsJobFamilyFacetId()).isEqualTo("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+                    assertThat(properties.getCvsLocationFacetIds()).containsExactly(
+                            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccccccccccc");
+                });
+    }
+
+    @Test
+    void bindsNewWorkdayFacetsFromEnvironmentSettings() {
+        contextRunner.withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                new SystemEnvironmentPropertySource("test-env", Map.of(
+                        "JOB_SCRAPER_FROST_BANK_JOB_FAMILY_FACET_ID", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "JOB_SCRAPER_FROST_BANK_LOCATION_FACET_IDS",
+                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,cccccccccccccccccccccccccccccccc",
+                        "JOB_SCRAPER_CITI_JOB_FAMILY_FACET_ID", "dddddddddddddddddddddddddddddddd",
+                        "JOB_SCRAPER_CITI_WORKER_SUBTYPE_FACET_ID", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                        "JOB_SCRAPER_CITI_COUNTRY_FACET_ID", "ffffffffffffffffffffffffffffffff",
+                        "JOB_SCRAPER_CITI_STATE_FACET_ID", "11111111111111111111111111111111",
+                        "JOB_SCRAPER_FANNIE_MAE_REMOTE_TYPE_FACET_ID", "22222222222222222222222222222222",
+                        "JOB_SCRAPER_FANNIE_MAE_JOB_FAMILY_FACET_ID", "33333333333333333333333333333333",
+                        "JOB_SCRAPER_FANNIE_MAE_LOCATION_FACET_ID", "44444444444444444444444444444444"))))
+                .run(context -> {
+                    JobScraperProperties properties = context.getBean(JobScraperProperties.class);
+                    assertThat(properties.getFrostBankJobFamilyFacetId()).isEqualTo("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+                    assertThat(properties.getFrostBankLocationFacetIds()).containsExactly(
+                            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccccccccccc");
+                    assertThat(properties.getCitiJobFamilyFacetId()).isEqualTo("dddddddddddddddddddddddddddddddd");
+                    assertThat(properties.getCitiWorkerSubtypeFacetId()).isEqualTo("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+                    assertThat(properties.getCitiCountryFacetId()).isEqualTo("ffffffffffffffffffffffffffffffff");
+                    assertThat(properties.getCitiStateFacetId()).isEqualTo("11111111111111111111111111111111");
+                    assertThat(properties.getFannieMaeRemoteTypeFacetId()).isEqualTo("22222222222222222222222222222222");
+                    assertThat(properties.getFannieMaeJobFamilyFacetId()).isEqualTo("33333333333333333333333333333333");
+                    assertThat(properties.getFannieMaeLocationFacetId()).isEqualTo("44444444444444444444444444444444");
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(JobScraperProperties.class)
     static class TestConfiguration {
