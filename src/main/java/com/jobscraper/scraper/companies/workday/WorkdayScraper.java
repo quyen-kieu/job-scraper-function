@@ -101,7 +101,7 @@ public abstract class WorkdayScraper implements CompanyScraper {
                                  List<String> errors) throws InterruptedException {
         int fetched = 0;
         int total = Integer.MAX_VALUE;
-        for (int page = 0; page < properties.maxSearchPagesPerRun(); page++) {
+        for (int page = 0; properties.canFetchSearchPage(page); page++) {
             int offset = page * PAGE_SIZE;
             try {
                 if (page > 0) {

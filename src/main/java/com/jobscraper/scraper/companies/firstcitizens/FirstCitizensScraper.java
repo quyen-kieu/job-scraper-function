@@ -58,7 +58,7 @@ public class FirstCitizensScraper implements CompanyScraper {
         Map<String, ScrapedJob> jobs = new LinkedHashMap<>();
         int pagesFetched = 0;
 
-        for (int page = 1; page <= properties.maxSearchPagesPerRun(); page++) {
+        for (int page = 1; properties.canFetchSearchPage(page - 1); page++) {
             if (page > 1) {
                 Thread.sleep(properties.requestDelay().toMillis());
             }

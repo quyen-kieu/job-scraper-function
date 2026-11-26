@@ -128,6 +128,46 @@ class OracleRecruitingScraperTest {
     }
 
     @Test
+    void unlimitedSearchFetchesBeyondThreePagesUntilReportedTotal() throws Exception {
+        properties.setMaxSearchPagesPerRun(0);
+        HttpResponse<String> detail = response(loadFixture("job-detail-without-salary.json"));
+        for (int i = 0; i < 4; i++) {
+            String id = Integer.toString(1000 + i);
+            String body = "{\"items\":[{\"TotalJobsCount\":4,\"requisitionList\":[{\"Id\":\"" + id
+                    + "\",\"Title\":\"Engineer\",\"PrimaryLocation\":\"TX\"}]}]}";
+            HttpResponse<String> search = response(body);
+            when(httpClient.get(SITE.searchUri(i, OracleRecruitingScraper.PAGE_SIZE))).thenReturn(search);
+            when(httpClient.get(detailUriFor(id))).thenReturn(detail);
+        }
+
+        ScrapeResult result = scraper.scrape(new ScrapeContext("run-1", "gm-financial", Instant.now()));
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.searchPagesFetched()).isEqualTo(4);
+        assertThat(result.jobs()).extracting(ScrapedJob::externalJobId)
+                .containsExactly("1000", "1001", "1002", "1003");
+        verify(httpClient, never()).get(SITE.searchUri(4, OracleRecruitingScraper.PAGE_SIZE));
+    }
+
+    @Test
+    void reportsEmptySearchPageBeforeReportedTotal() throws Exception {
+        properties.setMaxSearchPagesPerRun(0);
+        HttpResponse<String> first = response("""
+                {"items":[{"TotalJobsCount":2,"requisitionList":[{"Id":"1000","Title":"Engineer"}]}]}
+                """);
+        HttpResponse<String> empty = response("{\"items\":[{\"TotalJobsCount\":2,\"requisitionList\":[]}]}");
+        HttpResponse<String> detail = response(loadFixture("job-detail-without-salary.json"));
+        when(httpClient.get(SITE.searchUri(0, OracleRecruitingScraper.PAGE_SIZE))).thenReturn(first);
+        when(httpClient.get(SITE.searchUri(1, OracleRecruitingScraper.PAGE_SIZE))).thenReturn(empty);
+        when(httpClient.get(detailUriFor("1000"))).thenReturn(detail);
+
+        ScrapeResult result = scraper.scrape(new ScrapeContext("run-1", "gm-financial", Instant.now()));
+
+        assertThat(result.jobs()).hasSize(1);
+        assertThat(result.errors()).singleElement().asString().contains("empty before reaching the reported total");
+    }
+
+    @Test
     void shouldIsolateDetailFailuresWithoutFailingWholeRun() throws Exception {
         HttpResponse<String> search = response(singlePageSearch());
         HttpResponse<String> withSalary = response(loadFixture("job-detail-with-salary.json"));
@@ -233,6 +273,5 @@ class OracleRecruitingScraperTest {
         return response;
     }
 }
-
 
 

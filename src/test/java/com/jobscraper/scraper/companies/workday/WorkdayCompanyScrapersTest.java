@@ -6,9 +6,11 @@ import com.jobscraper.function.JobScraperProperties;
 import com.jobscraper.infrastructure.storage.RawScrapeStorage;
 import com.jobscraper.scraper.api.JobSearchHttpClient;
 import com.jobscraper.scraper.api.ScrapeContext;
+import com.jobscraper.scraper.companies.capitalone.CapitalOneScraper;
 import com.jobscraper.scraper.companies.citi.CitiScraper;
 import com.jobscraper.scraper.companies.fanniemae.FannieMaeScraper;
 import com.jobscraper.scraper.companies.frostbank.FrostBankScraper;
+import com.jobscraper.scraper.companies.humana.HumanaScraper;
 import com.jobscraper.scraper.registry.CompanyScraperRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -136,6 +138,45 @@ class WorkdayCompanyScrapersTest {
     }
 
     @Test
+    void appliesConfiguredHumanaFacets() throws Exception {
+        List<String> facets = List.of("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        properties.setHumanaJobFamilyFacetIds(facets);
+        HttpResponse<String> search = response(200, "{\"total\":0,\"jobPostings\":[]}");
+        when(httpClient.postJson(any(), anyString())).thenReturn(search);
+
+        var result = scraper("humana").scrape(new ScrapeContext("run-123", "humana", Instant.now()));
+
+        assertThat(result.errors()).isEmpty();
+        ArgumentCaptor<String> request = ArgumentCaptor.forClass(String.class);
+        verify(httpClient).postJson(any(), request.capture());
+        assertThat(mapper.readTree(request.getValue()).path("appliedFacets"))
+                .isEqualTo(mapper.valueToTree(Map.of("jobFamilyGroup", facets)));
+    }
+
+    @Test
+    void appliesConfiguredCapitalOneFacets() throws Exception {
+        String worker = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        String time = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        List<String> locations = List.of("cccccccccccccccccccccccccccccccc");
+        List<String> families = List.of("dddddddddddddddddddddddddddddddd");
+        properties.setCapitalOneWorkerSubtypeFacetId(worker);
+        properties.setCapitalOneTimeTypeFacetId(time);
+        properties.setCapitalOneLocationFacetIds(locations);
+        properties.setCapitalOneJobFamilyFacetIds(families);
+        HttpResponse<String> search = response(200, "{\"total\":0,\"jobPostings\":[]}");
+        when(httpClient.postJson(any(), anyString())).thenReturn(search);
+
+        var result = scraper("capital-one").scrape(new ScrapeContext("run-123", "capital-one", Instant.now()));
+
+        assertThat(result.errors()).isEmpty();
+        ArgumentCaptor<String> request = ArgumentCaptor.forClass(String.class);
+        verify(httpClient).postJson(any(), request.capture());
+        assertThat(mapper.readTree(request.getValue()).path("appliedFacets"))
+                .isEqualTo(mapper.valueToTree(Map.of("workerSubType", List.of(worker), "timeType", List.of(time),
+                        "locations", locations, "jobFamilyGroup", families)));
+    }
+
+    @Test
     void rejectsInvalidFacetsBeforeMakingRequests() throws Exception {
         List<InvalidFacet> cases = List.of(
                 new InvalidFacet("frost-bank", p -> p.setFrostBankJobFamilyFacetId("bad")),
@@ -147,7 +188,18 @@ class WorkdayCompanyScrapersTest {
                 new InvalidFacet("citi", p -> p.setCitiStateFacetId("bad")),
                 new InvalidFacet("fannie-mae", p -> p.setFannieMaeRemoteTypeFacetId("bad")),
                 new InvalidFacet("fannie-mae", p -> p.setFannieMaeJobFamilyFacetId("bad")),
-                new InvalidFacet("fannie-mae", p -> p.setFannieMaeLocationFacetId("bad")));
+                new InvalidFacet("fannie-mae", p -> p.setFannieMaeLocationFacetId("bad")),
+                new InvalidFacet("humana", p -> p.setHumanaJobFamilyFacetIds(null)),
+                new InvalidFacet("humana", p -> p.setHumanaJobFamilyFacetIds(List.of())),
+                new InvalidFacet("humana", p -> p.setHumanaJobFamilyFacetIds(List.of("bad"))),
+                new InvalidFacet("capital-one", p -> p.setCapitalOneWorkerSubtypeFacetId("bad")),
+                new InvalidFacet("capital-one", p -> p.setCapitalOneTimeTypeFacetId("bad")),
+                new InvalidFacet("capital-one", p -> p.setCapitalOneLocationFacetIds(null)),
+                new InvalidFacet("capital-one", p -> p.setCapitalOneLocationFacetIds(List.of())),
+                new InvalidFacet("capital-one", p -> p.setCapitalOneLocationFacetIds(List.of("bad"))),
+                new InvalidFacet("capital-one", p -> p.setCapitalOneJobFamilyFacetIds(null)),
+                new InvalidFacet("capital-one", p -> p.setCapitalOneJobFamilyFacetIds(List.of())),
+                new InvalidFacet("capital-one", p -> p.setCapitalOneJobFamilyFacetIds(List.of("bad"))));
         for (var testCase : cases) {
             properties = new JobScraperProperties();
             properties.setRequestDelay(Duration.ZERO);
@@ -173,6 +225,8 @@ class WorkdayCompanyScrapersTest {
                     assertThat(registry.find("frost-bank")).containsSame(context.getBean(FrostBankScraper.class));
                     assertThat(registry.find("citi")).containsSame(context.getBean(CitiScraper.class));
                     assertThat(registry.find("fannie-mae")).containsSame(context.getBean(FannieMaeScraper.class));
+                    assertThat(registry.find("humana")).containsSame(context.getBean(HumanaScraper.class));
+                    assertThat(registry.find("capital-one")).containsSame(context.getBean(CapitalOneScraper.class));
                 });
     }
 
@@ -181,6 +235,8 @@ class WorkdayCompanyScrapersTest {
             case "frost-bank" -> new FrostBankScraper(httpClient, storage, mapper, properties);
             case "citi" -> new CitiScraper(httpClient, storage, mapper, properties);
             case "fannie-mae" -> new FannieMaeScraper(httpClient, storage, mapper, properties);
+            case "humana" -> new HumanaScraper(httpClient, storage, mapper, properties);
+            case "capital-one" -> new CapitalOneScraper(httpClient, storage, mapper, properties);
             default -> throw new IllegalArgumentException("Unexpected company: " + company);
         };
     }
@@ -205,7 +261,40 @@ class WorkdayCompanyScrapersTest {
                         "https://fanniemae.wd1.myworkdayjobs.com/FannieMaeCareers",
                         Map.of("remoteType", List.of("bf1dc34adb121001727a83cb88650000"),
                                 "jobFamilyGroup", List.of("bf1dc34adb12100175ce6a6921f70000"),
-                                "locations", List.of("464222325cc3100210ee7e4b71320000"))));
+                                "locations", List.of("464222325cc3100210ee7e4b71320000"))),
+                new Site("humana", "R-436474",
+                        "https://humana.wd5.myworkdayjobs.com/wday/cxs/humana/Humana_External_Career_Site",
+                        "https://humana.wd5.myworkdayjobs.com/Humana_External_Career_Site",
+                        Map.of("jobFamilyGroup", List.of(
+                                "fbb60995c99901ebd9a7d74915c586c6",
+                                "fbb60995c999011d23ea024a15c58ec6",
+                                "fbb60995c999019d8a70164a15c592c6",
+                                "fbb60995c99901392fb3e14915c588c6",
+                                "fbb60995c99901ad81e1cd4915c584c6",
+                                "fbb60995c99901e15cebc24915c582c6",
+                                "fbb60995c99901de12ced94a15c5bac6",
+                                "fbb60995c999015ce05ca94715c51ac6",
+                                "fbb60995c9990180a257d34715c522c6",
+                                "fbb60995c99901271b96764715c510c6"))),
+                new Site("capital-one", "R1006542",
+                        "https://capitalone.wd12.myworkdayjobs.com/wday/cxs/capitalone/Capital_One",
+                        "https://capitalone.wd12.myworkdayjobs.com/Capital_One",
+                        Map.of("workerSubType", List.of("a12c70bf789e10572aab8e8909a619ae"),
+                                "timeType", List.of("2ed180e199081055c65d9d6853aa022d"),
+                                "locations", List.of(
+                                        "5303cb0ddb47102d5fa3abc17b27051d",
+                                        "5303cb0ddb47102d5fa459dc37b705c5",
+                                        "af51744fb4fc010ca9b81af56b6b0000",
+                                        "e1c37850645e101ce070e09523230000"),
+                                "jobFamilyGroup", List.of(
+                                        "797094e02d441000c3f4fece96e10000",
+                                        "a3ffb53edaa61000c3f5dc76643a0000",
+                                        "23c40d87cd84100035bd9201b2bf0000",
+                                        "c456977f3e611000c3e1be4b227f0000",
+                                        "23c40d87cd84100035bd7d9296540000",
+                                        "a12c70bf789e105802e9e79458dc29ab",
+                                        "797094e02d441000c3f51c4997090000",
+                                        "eaacc21c45691000c3e9ee9790cc0000"))));
     }
 
     private static ScrapeContext context(Site site) {
@@ -221,7 +310,8 @@ class WorkdayCompanyScrapersTest {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @Import({FrostBankScraper.class, CitiScraper.class, FannieMaeScraper.class, CompanyScraperRegistry.class})
+    @Import({FrostBankScraper.class, CitiScraper.class, FannieMaeScraper.class, HumanaScraper.class,
+            CapitalOneScraper.class, CompanyScraperRegistry.class})
     static class ScanConfiguration {
     }
 

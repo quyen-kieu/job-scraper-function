@@ -31,6 +31,33 @@ public class JobScraperProperties {
     private String fannieMaeRemoteTypeFacetId = "bf1dc34adb121001727a83cb88650000";
     private String fannieMaeJobFamilyFacetId = "bf1dc34adb12100175ce6a6921f70000";
     private String fannieMaeLocationFacetId = "464222325cc3100210ee7e4b71320000";
+    private List<String> humanaJobFamilyFacetIds = new ArrayList<>(List.of(
+            "fbb60995c99901ebd9a7d74915c586c6",
+            "fbb60995c999011d23ea024a15c58ec6",
+            "fbb60995c999019d8a70164a15c592c6",
+            "fbb60995c99901392fb3e14915c588c6",
+            "fbb60995c99901ad81e1cd4915c584c6",
+            "fbb60995c99901e15cebc24915c582c6",
+            "fbb60995c99901de12ced94a15c5bac6",
+            "fbb60995c999015ce05ca94715c51ac6",
+            "fbb60995c9990180a257d34715c522c6",
+            "fbb60995c99901271b96764715c510c6"));
+    private String capitalOneWorkerSubtypeFacetId = "a12c70bf789e10572aab8e8909a619ae";
+    private String capitalOneTimeTypeFacetId = "2ed180e199081055c65d9d6853aa022d";
+    private List<String> capitalOneLocationFacetIds = new ArrayList<>(List.of(
+            "5303cb0ddb47102d5fa3abc17b27051d",
+            "5303cb0ddb47102d5fa459dc37b705c5",
+            "af51744fb4fc010ca9b81af56b6b0000",
+            "e1c37850645e101ce070e09523230000"));
+    private List<String> capitalOneJobFamilyFacetIds = new ArrayList<>(List.of(
+            "797094e02d441000c3f4fece96e10000",
+            "a3ffb53edaa61000c3f5dc76643a0000",
+            "23c40d87cd84100035bd9201b2bf0000",
+            "c456977f3e611000c3e1be4b227f0000",
+            "23c40d87cd84100035bd7d9296540000",
+            "a12c70bf789e105802e9e79458dc29ab",
+            "797094e02d441000c3f51c4997090000",
+            "eaacc21c45691000c3e9ee9790cc0000"));
     private String cvsJobFamilyFacetId = "e65dbadf6a50100168ed86fe4cf50001";
     private List<String> cvsLocationFacetIds = new ArrayList<>(List.of(
             "69b7f7384b5e1008e9c744772f180000",
@@ -110,6 +137,46 @@ public class JobScraperProperties {
 
     public void setFannieMaeLocationFacetId(String id) {
         this.fannieMaeLocationFacetId = id;
+    }
+
+    public List<String> getHumanaJobFamilyFacetIds() {
+        return humanaJobFamilyFacetIds;
+    }
+
+    public void setHumanaJobFamilyFacetIds(List<String> ids) {
+        this.humanaJobFamilyFacetIds = ids;
+    }
+
+    public String getCapitalOneWorkerSubtypeFacetId() {
+        return capitalOneWorkerSubtypeFacetId;
+    }
+
+    public void setCapitalOneWorkerSubtypeFacetId(String id) {
+        this.capitalOneWorkerSubtypeFacetId = id;
+    }
+
+    public String getCapitalOneTimeTypeFacetId() {
+        return capitalOneTimeTypeFacetId;
+    }
+
+    public void setCapitalOneTimeTypeFacetId(String id) {
+        this.capitalOneTimeTypeFacetId = id;
+    }
+
+    public List<String> getCapitalOneLocationFacetIds() {
+        return capitalOneLocationFacetIds;
+    }
+
+    public void setCapitalOneLocationFacetIds(List<String> ids) {
+        this.capitalOneLocationFacetIds = ids;
+    }
+
+    public List<String> getCapitalOneJobFamilyFacetIds() {
+        return capitalOneJobFamilyFacetIds;
+    }
+
+    public void setCapitalOneJobFamilyFacetIds(List<String> ids) {
+        this.capitalOneJobFamilyFacetIds = ids;
     }
 
     public String getCvsJobFamilyFacetId() {
@@ -204,7 +271,14 @@ public class JobScraperProperties {
     }
 
     public void setMaxSearchPagesPerRun(int maxSearchPagesPerRun) {
+        if (maxSearchPagesPerRun < 0) {
+            throw new IllegalArgumentException("Search page limit must be zero or positive");
+        }
         this.maxSearchPagesPerRun = maxSearchPagesPerRun;
+    }
+
+    public boolean canFetchSearchPage(int pagesFetched) {
+        return maxSearchPagesPerRun == 0 || pagesFetched < maxSearchPagesPerRun;
     }
 
     public Duration requestDelay() {

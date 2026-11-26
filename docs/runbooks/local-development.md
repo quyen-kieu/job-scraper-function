@@ -25,6 +25,10 @@ your own Kafka cluster. The sample selects local raw storage
 (`RAW_STORAGE_MODE=file`) and disables the Cosmos and Resend
 integrations. Enable and configure each integration if you need to exercise
 it. Do not paste the resulting file into issues, logs, or chats.
+The sample sets `JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN` to `0`, which removes
+the search-page cap for local scrapes. Set a positive number to restore a cap;
+negative values are invalid. Existing local settings files must be updated
+separately. Azure's Bicep settings retain the three-page limit.
 Use `RAW_STORAGE_MODE=cosmos` and enable Cosmos to exercise the cloud handoff
 container; it must exist with a 30-day TTL before the scraper runs.
 When Cosmos is disabled, no-op repositories discard writes and every posting
@@ -67,6 +71,9 @@ mvn -q compile exec:java "-Dexec.mainClass=com.jobscraper.tools.LocalMcKessonScr
 ```
 
 This runner writes local raw files and reports counts/errors; it **does not**
-exercise Kafka, Cosmos DB, or email. Live sites can change, rate-limit, or
-temporarily fail. Use the smallest relevant Maven test selection when changing
-a particular scraper, followed by the broader suite as appropriate.
+exercise Kafka, Cosmos DB, or email. It also runs without a search-page cap.
+An uncapped scrape may take longer, generate more source requests, local files
+and Kafka events, and may exceed broker message limits. Live sites can change,
+rate-limit, or temporarily fail; uncapped paging does not guarantee a stable
+or complete snapshot. Use the smallest relevant Maven test selection when
+changing a particular scraper, followed by the broader suite as appropriate.

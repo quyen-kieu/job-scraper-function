@@ -148,8 +148,9 @@ class ResendDailyNotificationSenderTest {
     }
 
     @Test
-    void buildRequestUsesCitiAndFannieMaeDisplayNames() {
-        for (var entry : java.util.Map.of("citi", "Citi", "fannie-mae", "Fannie Mae").entrySet()) {
+    void buildRequestUsesWorkdayCompanyDisplayNames() {
+        for (var entry : java.util.Map.of("citi", "Citi", "fannie-mae", "Fannie Mae", "humana", "Humana",
+                "capital-one", "Capital One").entrySet()) {
             DailyNotificationRequestedEvent event = new DailyNotificationRequestedEvent(
                     "run-" + entry.getKey(), LocalDate.of(2026, 11, 25), 1, 0, 0, 0, List.of(),
                     entry.getKey(), List.of());

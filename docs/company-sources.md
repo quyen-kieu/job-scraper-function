@@ -13,11 +13,15 @@ change and requests may fail or be capped.
 | CVS Health | `cvs` | [Workday search](https://cvshealth.wd1.myworkdayjobs.com/CVS_Health_Careers?source=CareerMarketingSite&jobFamilyGroup=e65dbadf6a50100168ed86fe4cf50001&locations=69b7f7384b5e1008e9c744772f180000&locations=e75b3cfda6d41000edbef9d1f17b0000&locations=e75b3cfda6d41000edbdcbb1c2b50000&locations=e75b3cfda6d41000edbc9e0488440000&locations=e75b3cfda6d41000edc098b35b130000&locations=e75b3cfda6d41000edc32657f9160000) using the [CVS scraper](../src/main/java/com/jobscraper/scraper/companies/cvs/CvsScraper.java). |
 | Citi | `citi` | [Workday search](https://citi.wd5.myworkdayjobs.com/2/?jobFamilyGroup=e32326e1708d01575bddff0c120102c1&workerSubType=e32326e1708d01289a50257249019cdd&Country_and_Jurisdiction=bc33aa3152ec42d4995f4791a106ed09&State_or_Province=fc77e3a1ab36487f9646d14f7242dd77) using the [Citi scraper](../src/main/java/com/jobscraper/scraper/companies/citi/CitiScraper.java). |
 | Fannie Mae | `fannie-mae` | [Workday search](https://fanniemae.wd1.myworkdayjobs.com/FannieMaeCareers/?remoteType=bf1dc34adb121001727a83cb88650000&jobFamilyGroup=bf1dc34adb12100175ce6a6921f70000&locations=464222325cc3100210ee7e4b71320000) using the [Fannie Mae scraper](../src/main/java/com/jobscraper/scraper/companies/fanniemae/FannieMaeScraper.java). |
+| Humana | `humana` | [Workday search](https://humana.wd5.myworkdayjobs.com/Humana_External_Career_Site?jobFamilyGroup=fbb60995c99901ebd9a7d74915c586c6&jobFamilyGroup=fbb60995c999011d23ea024a15c58ec6&jobFamilyGroup=fbb60995c999019d8a70164a15c592c6&jobFamilyGroup=fbb60995c99901392fb3e14915c588c6&jobFamilyGroup=fbb60995c99901ad81e1cd4915c584c6&jobFamilyGroup=fbb60995c99901e15cebc24915c582c6&jobFamilyGroup=fbb60995c99901de12ced94a15c5bac6&jobFamilyGroup=fbb60995c999015ce05ca94715c51ac6&jobFamilyGroup=fbb60995c9990180a257d34715c522c6&jobFamilyGroup=fbb60995c99901271b96764715c510c6) using the [Humana scraper](../src/main/java/com/jobscraper/scraper/companies/humana/HumanaScraper.java). |
+| Capital One | `capital-one` | [Workday search](https://capitalone.wd12.myworkdayjobs.com/Capital_One/?workerSubType=a12c70bf789e10572aab8e8909a619ae&timeType=2ed180e199081055c65d9d6853aa022d&locations=5303cb0ddb47102d5fa3abc17b27051d&locations=5303cb0ddb47102d5fa459dc37b705c5&locations=af51744fb4fc010ca9b81af56b6b0000&locations=e1c37850645e101ce070e09523230000&jobFamilyGroup=797094e02d441000c3f4fece96e10000&jobFamilyGroup=a3ffb53edaa61000c3f5dc76643a0000&jobFamilyGroup=23c40d87cd84100035bd9201b2bf0000&jobFamilyGroup=c456977f3e611000c3e1be4b227f0000&jobFamilyGroup=23c40d87cd84100035bd7d9296540000&jobFamilyGroup=a12c70bf789e105802e9e79458dc29ab&jobFamilyGroup=797094e02d441000c3f51c4997090000&jobFamilyGroup=eaacc21c45691000c3e9ee9790cc0000) using the [Capital One scraper](../src/main/java/com/jobscraper/scraper/companies/capitalone/CapitalOneScraper.java). |
 
 Company enablement and page limits are configurable; see
-[`local.settings.sample.json`](../local.settings.sample.json). By default each
-company run fetches up to three search pages with a 300 ms request delay.
-McKesson, GM Financial, Frost Bank, CVS, Citi, and Fannie Mae attempt a detail request for every
+[`local.settings.sample.json`](../local.settings.sample.json). The local sample
+sets `JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN=0` for no page cap. A positive value
+limits pages; the Azure template and the application default use three.
+Requests use a 300 ms delay by default.
+McKesson, GM Financial, Frost Bank, CVS, Citi, Fannie Mae, Humana, and Capital One attempt a detail request for every
 distinct job discovered within those pages, including after individual failures.
 First Citizens instead extracts descriptions from search responses. There is
 no detail-page cap. Larger runs require more time and requests and can incur
@@ -75,3 +79,25 @@ the corresponding Bicep parameters as well. These Workday facet IDs may change.
 Multi-location jobs can include locations outside the selected filters. Citi
 and Fannie Mae use their Workday requisition IDs; where the ID is absent, an
 unambiguous ID may be extracted from the job path.
+
+Humana uses all ten job-family groups from its search link, with no location
+filter. Override them with comma-separated `JOB_SCRAPER_HUMANA_JOB_FAMILY_FACET_IDS`
+and update the corresponding Bicep parameter for deployed environments.
+Workday may change these IDs. Humana requisition IDs have the form `R-123456`;
+if the search result omits one, the scraper can extract an unambiguous ID from
+the job path. Azure's default three-page limit fetches at most 60 search results,
+so additional matching jobs may be omitted.
+
+Capital One uses the selected regular, full-time worker filters and all eight
+requested job-family groups, along with Plano, Frisco, US Remote, and Remote -
+National. The originally supplied location value `1BvTfDQa4VVtLBkknXYZHy67oE61SMpZNe`
+was rejected by Workday and is not included. Multi-location jobs can include
+other locations. Override the filters with
+`JOB_SCRAPER_CAPITAL_ONE_WORKER_SUBTYPE_FACET_ID`,
+`JOB_SCRAPER_CAPITAL_ONE_TIME_TYPE_FACET_ID`, and the comma-separated
+`JOB_SCRAPER_CAPITAL_ONE_LOCATION_FACET_IDS` and
+`JOB_SCRAPER_CAPITAL_ONE_JOB_FAMILY_FACET_IDS`. Update the corresponding Bicep
+parameters in deployed environments. Workday IDs can change. Capital One
+requisition IDs have the form `R1234567`; if the search result omits one, the
+scraper can extract an unambiguous ID from the job path. Azure's default three-page
+limit fetches at most 60 search results, so additional matching jobs may be omitted.

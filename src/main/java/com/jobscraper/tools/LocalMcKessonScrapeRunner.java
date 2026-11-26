@@ -36,7 +36,7 @@ public final class LocalMcKessonScrapeRunner {
 
     public static void main(String[] args) throws Exception {
         JobScraperProperties scraperProperties = new JobScraperProperties();
-        // Defaults limit search pages and add a delay between requests.
+        scraperProperties.setMaxSearchPagesPerRun(0);
 
         RawStorageProperties storageProperties = new RawStorageProperties();
         storageProperties.setMode("file");

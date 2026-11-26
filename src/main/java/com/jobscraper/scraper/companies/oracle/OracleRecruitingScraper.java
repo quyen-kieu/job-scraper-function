@@ -118,9 +118,7 @@ public class OracleRecruitingScraper implements CompanyScraper {
             Map<String, OracleRequisitionSummary> requisitionsById) throws InterruptedException {
         int searchPagesFetched = 0;
         int offset = 0;
-        int pageCap = properties.maxSearchPagesPerRun();
-
-        while (searchPagesFetched < pageCap) {
+        while (properties.canFetchSearchPage(searchPagesFetched)) {
             int pageNumber = searchPagesFetched + 1;
             String body;
             try {
@@ -153,6 +151,10 @@ public class OracleRecruitingScraper implements CompanyScraper {
 
             page.requisitions().forEach(requisition -> requisitionsById.putIfAbsent(requisition.id(), requisition));
             offset += page.requisitions().size();
+            if (page.requisitions().isEmpty() && offset < page.totalJobsCount()) {
+                errors.add("Search page " + pageNumber + " was empty before reaching the reported total");
+                break;
+            }
             if (page.requisitions().isEmpty() || offset >= page.totalJobsCount()) {
                 break;
             }

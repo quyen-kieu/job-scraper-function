@@ -15,7 +15,9 @@ final class CompanyDisplayNames {
             "frost-bank", "Frost Bank",
             "cvs", "CVS Health",
             "citi", "Citi",
-            "fannie-mae", "Fannie Mae");
+            "fannie-mae", "Fannie Mae",
+            "humana", "Humana",
+            "capital-one", "Capital One");
 
     private CompanyDisplayNames() {
     }

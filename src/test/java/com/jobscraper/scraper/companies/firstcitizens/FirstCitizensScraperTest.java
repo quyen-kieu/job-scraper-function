@@ -105,6 +105,24 @@ class FirstCitizensScraperTest {
     }
 
     @Test
+    void unlimitedSearchFetchesBeyondThreePagesUntilReportedTotal() throws Exception {
+        properties.setMaxSearchPagesPerRun(0);
+        for (int page = 1; page <= 4; page++) {
+            String body = "{\"totalCount\":31,\"jobs\":[{\"data\":{\"req_id\":\"" + page
+                    + "\",\"slug\":\"" + page + "\",\"title\":\"Engineer\",\"description\":\"Description\"}}]}";
+            HttpResponse<String> search = response(200, body);
+            when(httpClient.get(uri(page))).thenReturn(search);
+        }
+
+        ScrapeResult result = scraper.scrape(context());
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.searchPagesFetched()).isEqualTo(4);
+        assertThat(result.jobs()).extracting(ScrapedJob::externalJobId).containsExactly("1", "2", "3", "4");
+        verify(httpClient, never()).get(uri(5));
+    }
+
+    @Test
     void storesPlainTextWhenSearchDescriptionHasNoHtml() throws Exception {
         HttpResponse<String> page = response(200, """
                 {"totalCount":1,"jobs":[{"data":{"req_id":"123","slug":"123",

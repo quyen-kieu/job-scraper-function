@@ -5,7 +5,7 @@
 The timer queues commands for every enabled company. To trigger manually, use
 the `OnDemandScrapeCommandProducer` HTTP function, which accepts `companyId` as a query
 parameter: `mckesson`, `gm-financial`, `first-citizens`, `frost-bank`, `cvs`,
-`citi`, `fannie-mae`, or
+`citi`, `fannie-mae`, `humana`, `capital-one`, or
 omit the parameter to queue all currently enabled companies. A successful
 response does not guarantee broker acknowledgment, processing, or email.
 
@@ -18,7 +18,7 @@ $baseUri = (Read-Host "Function App base URL").TrimEnd('/')
 $secureKey = Read-Host "Function key" -AsSecureString
 $key = [System.Net.NetworkCredential]::new('', $secureKey).Password
 try {
-    $companyIds = @('mckesson', 'gm-financial', 'first-citizens', 'frost-bank', 'cvs', 'citi', 'fannie-mae')
+    $companyIds = @('mckesson', 'gm-financial', 'first-citizens', 'frost-bank', 'cvs', 'citi', 'fannie-mae', 'humana', 'capital-one')
     foreach ($companyId in $companyIds) {
         Invoke-RestMethod -Method Post `
             -Uri "$baseUri/api/scrape/trigger?companyId=$companyId" `

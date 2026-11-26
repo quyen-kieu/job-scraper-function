@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JobScraperPropertiesTest {
 
@@ -27,6 +28,30 @@ class JobScraperPropertiesTest {
             assertThat(properties.maxRetries()).isEqualTo(3);
             assertThat(properties.enabled()).isTrue();
         });
+    }
+
+    @Test
+    void pageLimitCanBePositiveOrUnlimitedButNotNegative() {
+        JobScraperProperties properties = new JobScraperProperties();
+        assertThat(properties.canFetchSearchPage(2)).isTrue();
+        assertThat(properties.canFetchSearchPage(3)).isFalse();
+        properties.setMaxSearchPagesPerRun(0);
+        assertThat(properties.canFetchSearchPage(100)).isTrue();
+        assertThatThrownBy(() -> properties.setMaxSearchPagesPerRun(-1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("zero or positive");
+    }
+
+    @Test
+    void bindsUnlimitedPageLimitFromEnvironmentSettings() {
+        contextRunner.withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                new SystemEnvironmentPropertySource("test-env", Map.of(
+                        "JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN", "0"))))
+                .run(context -> {
+                    JobScraperProperties properties = context.getBean(JobScraperProperties.class);
+                    assertThat(properties.maxSearchPagesPerRun()).isZero();
+                    assertThat(properties.canFetchSearchPage(100)).isTrue();
+                });
     }
 
     @Test
@@ -128,6 +153,37 @@ class JobScraperPropertiesTest {
                     assertThat(properties.getFannieMaeRemoteTypeFacetId()).isEqualTo("22222222222222222222222222222222");
                     assertThat(properties.getFannieMaeJobFamilyFacetId()).isEqualTo("33333333333333333333333333333333");
                     assertThat(properties.getFannieMaeLocationFacetId()).isEqualTo("44444444444444444444444444444444");
+                });
+    }
+
+    @Test
+    void bindsHumanaFacetsFromEnvironmentSettings() {
+        contextRunner.withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                new SystemEnvironmentPropertySource("test-env", Map.of(
+                        "JOB_SCRAPER_HUMANA_JOB_FAMILY_FACET_IDS",
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))))
+                .run(context -> assertThat(context.getBean(JobScraperProperties.class).getHumanaJobFamilyFacetIds())
+                        .containsExactly("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+    }
+
+    @Test
+    void bindsCapitalOneFacetsFromEnvironmentSettings() {
+        contextRunner.withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                new SystemEnvironmentPropertySource("test-env", Map.of(
+                        "JOB_SCRAPER_CAPITAL_ONE_WORKER_SUBTYPE_FACET_ID", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "JOB_SCRAPER_CAPITAL_ONE_TIME_TYPE_FACET_ID", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "JOB_SCRAPER_CAPITAL_ONE_LOCATION_FACET_IDS",
+                        "cccccccccccccccccccccccccccccccc,dddddddddddddddddddddddddddddddd",
+                        "JOB_SCRAPER_CAPITAL_ONE_JOB_FAMILY_FACET_IDS",
+                        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffff"))))
+                .run(context -> {
+                    JobScraperProperties properties = context.getBean(JobScraperProperties.class);
+                    assertThat(properties.getCapitalOneWorkerSubtypeFacetId()).isEqualTo("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+                    assertThat(properties.getCapitalOneTimeTypeFacetId()).isEqualTo("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+                    assertThat(properties.getCapitalOneLocationFacetIds()).containsExactly(
+                            "cccccccccccccccccccccccccccccccc", "dddddddddddddddddddddddddddddddd");
+                    assertThat(properties.getCapitalOneJobFamilyFacetIds()).containsExactly(
+                            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "ffffffffffffffffffffffffffffffff");
                 });
     }
 

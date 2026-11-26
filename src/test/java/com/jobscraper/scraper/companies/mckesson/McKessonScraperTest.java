@@ -164,6 +164,25 @@ class McKessonScraperTest {
     }
 
     @Test
+    void unlimitedSearchFetchesBeyondThreePagesUntilReportedTotal() throws Exception {
+        properties.setMaxSearchPagesPerRun(0);
+        HttpResponse<String> first = response(200, search(61, ONE_JOB));
+        HttpResponse<String> second = response(200, search(0, ONE_JOB.replace("JR100", "JR101")));
+        HttpResponse<String> third = response(200, search(0, ONE_JOB.replace("JR100", "JR102")));
+        HttpResponse<String> fourth = response(200, search(0, ONE_JOB.replace("JR100", "JR103")));
+        when(httpClient.postJson(any(), anyString())).thenReturn(first, second, third, fourth);
+
+        ScrapeResult result = scraper.scrape(context());
+
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.searchPagesFetched()).isEqualTo(4);
+        assertThat(result.jobs()).extracting("externalJobId").containsExactly("JR100", "JR101", "JR102", "JR103");
+        ArgumentCaptor<String> requests = ArgumentCaptor.forClass(String.class);
+        verify(httpClient, times(4)).postJson(any(), requests.capture());
+        assertThat(mapper.readTree(requests.getAllValues().get(3)).path("offset").asInt()).isEqualTo(60);
+    }
+
+    @Test
     void attemptsEveryDetailEvenWhenRequestsFail() throws Exception {
         HttpResponse<String> searchResponse = response(200, search(2, ONE_JOB + ","
                 + ONE_JOB.replace("JR100", "JR101")));

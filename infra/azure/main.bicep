@@ -91,6 +91,46 @@ param fannieMaeJobFamilyFacetId string = 'bf1dc34adb12100175ce6a6921f70000'
 @description('Fannie Mae Workday location facet ID.')
 param fannieMaeLocationFacetId string = '464222325cc3100210ee7e4b71320000'
 
+@description('Humana Workday job family group facet IDs.')
+param humanaJobFamilyFacetIds array = [
+  'fbb60995c99901ebd9a7d74915c586c6'
+  'fbb60995c999011d23ea024a15c58ec6'
+  'fbb60995c999019d8a70164a15c592c6'
+  'fbb60995c99901392fb3e14915c588c6'
+  'fbb60995c99901ad81e1cd4915c584c6'
+  'fbb60995c99901e15cebc24915c582c6'
+  'fbb60995c99901de12ced94a15c5bac6'
+  'fbb60995c999015ce05ca94715c51ac6'
+  'fbb60995c9990180a257d34715c522c6'
+  'fbb60995c99901271b96764715c510c6'
+]
+
+@description('Capital One Workday worker subtype facet ID.')
+param capitalOneWorkerSubtypeFacetId string = 'a12c70bf789e10572aab8e8909a619ae'
+
+@description('Capital One Workday time type facet ID.')
+param capitalOneTimeTypeFacetId string = '2ed180e199081055c65d9d6853aa022d'
+
+@description('Capital One Workday location facet IDs.')
+param capitalOneLocationFacetIds array = [
+  '5303cb0ddb47102d5fa3abc17b27051d'
+  '5303cb0ddb47102d5fa459dc37b705c5'
+  'af51744fb4fc010ca9b81af56b6b0000'
+  'e1c37850645e101ce070e09523230000'
+]
+
+@description('Capital One Workday job family group facet IDs.')
+param capitalOneJobFamilyFacetIds array = [
+  '797094e02d441000c3f4fece96e10000'
+  'a3ffb53edaa61000c3f5dc76643a0000'
+  '23c40d87cd84100035bd9201b2bf0000'
+  'c456977f3e611000c3e1be4b227f0000'
+  '23c40d87cd84100035bd7d9296540000'
+  'a12c70bf789e105802e9e79458dc29ab'
+  '797094e02d441000c3f51c4997090000'
+  'eaacc21c45691000c3e9ee9790cc0000'
+]
+
 @description('CVS Workday job family group facet ID.')
 param cvsJobFamilyFacetId string = 'e65dbadf6a50100168ed86fe4cf50001'
 
@@ -217,6 +257,15 @@ var appSettings = [
   { name: 'JOB_SCRAPER_FANNIE_MAE_REMOTE_TYPE_FACET_ID', value: fannieMaeRemoteTypeFacetId }
   { name: 'JOB_SCRAPER_FANNIE_MAE_JOB_FAMILY_FACET_ID', value: fannieMaeJobFamilyFacetId }
   { name: 'JOB_SCRAPER_FANNIE_MAE_LOCATION_FACET_ID', value: fannieMaeLocationFacetId }
+  { name: 'JOB_SCRAPER_COMPANIES_7_ID', value: 'humana' }
+  { name: 'JOB_SCRAPER_COMPANIES_7_ENABLED', value: 'true' }
+  { name: 'JOB_SCRAPER_HUMANA_JOB_FAMILY_FACET_IDS', value: join(humanaJobFamilyFacetIds, ',') }
+  { name: 'JOB_SCRAPER_COMPANIES_8_ID', value: 'capital-one' }
+  { name: 'JOB_SCRAPER_COMPANIES_8_ENABLED', value: 'true' }
+  { name: 'JOB_SCRAPER_CAPITAL_ONE_WORKER_SUBTYPE_FACET_ID', value: capitalOneWorkerSubtypeFacetId }
+  { name: 'JOB_SCRAPER_CAPITAL_ONE_TIME_TYPE_FACET_ID', value: capitalOneTimeTypeFacetId }
+  { name: 'JOB_SCRAPER_CAPITAL_ONE_LOCATION_FACET_IDS', value: join(capitalOneLocationFacetIds, ',') }
+  { name: 'JOB_SCRAPER_CAPITAL_ONE_JOB_FAMILY_FACET_IDS', value: join(capitalOneJobFamilyFacetIds, ',') }
   { name: 'JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN', value: '3' }
   { name: 'JOB_SCRAPER_REQUEST_DELAY', value: 'PT0.3S' }
   { name: 'RAW_STORAGE_MODE', value: 'cosmos' }
