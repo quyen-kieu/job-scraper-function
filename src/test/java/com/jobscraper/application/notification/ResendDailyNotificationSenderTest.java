@@ -63,6 +63,16 @@ class ResendDailyNotificationSenderTest {
     }
 
     @Test
+    void rejectsSuccessfulResponseWithoutAnEmailId() throws Exception {
+        when(resendClient.emails()).thenReturn(emailsService);
+        when(emailsService.send(any(CreateEmailOptions.class))).thenReturn(new CreateEmailResponse());
+
+        assertThatThrownBy(() -> new ResendDailyNotificationSender(resendClient, properties).send(buildEvent()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no email ID").hasMessageContaining("run-2026-08-23");
+    }
+
+    @Test
     void buildRequestUsesConfiguredFromAndToAddresses() {
         ResendDailyNotificationSender sender = new ResendDailyNotificationSender(resendClient, properties);
         CreateEmailOptions request = sender.buildRequest(buildEvent());

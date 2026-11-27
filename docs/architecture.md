@@ -45,6 +45,8 @@ full descriptions are not placed in Kafka messages.
 
 Completion events include `searchComplete`, which is true only when pagination
 reaches a stable reported total and the number of unique job IDs matches it.
+Workday reports the total on the first page and may return zero as a placeholder
+on subsequent pages; a later nonzero total must still match the first.
 Older events default to false. This flag covers search enumeration only: detail
 or storage errors are reported separately, and changing source results can still
 produce a misleadingly consistent count. Reconciliation requires this flag,

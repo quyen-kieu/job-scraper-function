@@ -184,9 +184,10 @@ public class CosmosJobPostingRepository implements JobPostingRepository {
                 return existing;
             }
             try {
+                CompanyScrapeState initialState = CompanyScrapeState.empty(companyId);
                 CosmosItemResponse<CompanyScrapeState> created = container.createItem(
-                        CompanyScrapeState.empty(companyId), partition, new CosmosItemRequestOptions());
-                return new Versioned<>(created.getItem(), created.getETag());
+                        initialState, partition, new CosmosItemRequestOptions());
+                return new Versioned<>(initialState, created.getETag());
             } catch (CosmosException ex) {
                 if (ex.getStatusCode() != 409) {
                     throw ex;
@@ -234,5 +235,10 @@ public class CosmosJobPostingRepository implements JobPostingRepository {
     }
 
     private record Versioned<T>(T item, String etag) {
+        private Versioned {
+            if (item == null || etag == null || etag.isBlank()) {
+                throw new IllegalStateException("Cosmos response is missing an item or ETag required for concurrency control");
+            }
+        }
     }
 }

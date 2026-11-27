@@ -142,6 +142,8 @@ jobs:
           cache: maven
       - name: mvn test (integration-tagged tests excluded by existing surefire config)
         run: mvn -B test
+      - name: Test smoke-test correlation and email verification
+        run: bash scripts/tests/smoke_test_test.sh
 
   # Upload the staging directory as an artifact so deploy-app doesn't rebuild.
   package:

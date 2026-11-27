@@ -40,18 +40,21 @@ key authorization unless explicitly started with authorization enabled.
 The deployment smoke test defaults to **McKesson only**. A successful
 deployment smoke test does not mean the other companies were triggered. See
 [`scripts/smoke_test.sh`](../../scripts/smoke_test.sh) and the
-[CI/CD reference](../../.github/workflows/README.md). Its scrape trace lookup
-matches the company and a recent time window, not the returned run ID. Its
-notification check matches the run ID but only establishes that the notification
-consumer logged processing; it can also succeed for a deduplicated or logged
-notification. The email check is skipped when disabled or when no run ID is
-returned. None of these checks proves inbox delivery or database persistence.
+[CI/CD reference](../../.github/workflows/README.md). The smoke test correlates
+the scrape and Resend acceptance traces to the returned run ID and fails if
+the ID is missing or Resend is disabled. `SMOKE_TEST_VERIFY_EMAIL=false` explicitly
+skips the email check. Resend acceptance does not prove inbox delivery, and a
+sent notification can still report a partial scrape or failed reconciliation.
 
 ## Check processing and email
 
 1. Use the run IDs and company IDs in the trigger responses to locate the
    corresponding function logs. Check command consumption, scrape completion,
-   page counts, and any collected errors for each company.
+   page counts, full-refresh and completeness flags, and error counts for each
+   company. Workday search traces also report the first-page total, unique jobs,
+   total consistency, and whether the end was reached. Search failures log the
+   page, failure category, and HTTP status when available without logging raw
+   exception details. Refer to the notification summary for collected errors.
 2. Check normalization, persistence, metrics, and notification logs separately.
    The normalizer persists postings and observations before publishing the
    notification. A skipped or failed reconciliation is reported in the summary;

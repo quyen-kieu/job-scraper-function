@@ -183,6 +183,48 @@ class McKessonScraperTest {
     }
 
     @Test
+    void completesFullWorkdayScanWhenLaterTotalsAreZero() throws Exception {
+        HttpResponse<String> first = response(200, search(60, jobs(0, 20)));
+        HttpResponse<String> second = response(200, search(0, jobs(20, 40)));
+        HttpResponse<String> third = response(200, search(0, jobs(40, 60)));
+        when(httpClient.postJson(any(), anyString())).thenReturn(first, second, third);
+
+        ScrapeResult result = scraper.scrape(context());
+
+        assertThat(result.searchComplete()).isTrue();
+        assertThat(result.jobs()).hasSize(60);
+        assertThat(result.detailPagesFetched()).isEqualTo(60);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void doesNotCompleteWhenLaterNonzeroTotalChangesOrIdsAreDuplicated() throws Exception {
+        HttpResponse<String> first = response(200, search(21, jobs(0, 20)));
+        HttpResponse<String> changed = response(200, search(22, jobs(20, 21)));
+        HttpResponse<String> duplicate = response(200, search(0, jobs(0, 1)));
+        when(httpClient.postJson(any(), anyString())).thenReturn(first, changed, first, duplicate);
+
+        assertThat(scraper.scrape(context()).searchComplete()).isFalse();
+        assertThat(scraper.scrape(context()).searchComplete()).isFalse();
+    }
+
+    @Test
+    void dailyScanFetchesOnlySelectedDetailsAcrossAllPages() throws Exception {
+        HttpResponse<String> first = response(200, search(21, jobs(0, 20)));
+        HttpResponse<String> second = response(200, search(0, jobs(20, 21)));
+        when(httpClient.postJson(any(), anyString())).thenReturn(first, second);
+        ScrapeContext daily = new ScrapeContext("daily", "mckesson", Instant.now(), false,
+                (job, reliableDate) -> job.externalJobId().equals("JR120"));
+
+        ScrapeResult result = scraper.scrape(daily);
+
+        assertThat(result.searchComplete()).isTrue();
+        assertThat(result.jobs()).hasSize(21);
+        assertThat(result.detailPagesFetched()).isEqualTo(1);
+        verify(httpClient, times(1)).get(any());
+    }
+
+    @Test
     void attemptsEveryDetailEvenWhenRequestsFail() throws Exception {
         HttpResponse<String> searchResponse = response(200, search(2, ONE_JOB + ","
                 + ONE_JOB.replace("JR100", "JR101")));
@@ -279,6 +321,12 @@ class McKessonScraperTest {
 
     private static String search(int total, String jobs) {
         return "{\"total\":" + total + ",\"jobPostings\":[" + jobs + "]}";
+    }
+
+    private static String jobs(int start, int end) {
+        return java.util.stream.IntStream.range(start, end)
+                .mapToObj(i -> ONE_JOB.replace("JR100", "JR" + (100 + i)))
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private static ScrapeContext context() {

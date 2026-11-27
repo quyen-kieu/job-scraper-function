@@ -22,4 +22,9 @@ public final class SearchScanTracker {
     public boolean isComplete(int uniqueJobs) {
         return consistent && reachedEnd && total != null && total == uniqueJobs;
     }
+
+    public String diagnostics(int uniqueJobs) {
+        return "reportedTotal=" + total + " uniqueJobs=" + uniqueJobs
+                + " totalsConsistent=" + consistent + " reachedEnd=" + reachedEnd;
+    }
 }

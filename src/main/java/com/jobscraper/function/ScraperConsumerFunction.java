@@ -11,6 +11,9 @@ import com.microsoft.azure.functions.annotation.FunctionName;
 import com.microsoft.azure.functions.annotation.KafkaTrigger;
 import org.springframework.stereotype.Component;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
  * Kafka-triggered function for the {@code job.scrape.commands} topic.
  *
@@ -25,6 +28,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class ScraperConsumerFunction {
+    private static final Pattern SEARCH_ERROR = Pattern.compile(
+            "^Search page (\\d+) (fetch failed|parse failed|storage write failed|failed|was empty before reaching the reported total)");
+    private static final Pattern HTTP_STATUS = Pattern.compile("\\bHTTP [1-5]\\d\\d\\b");
 
     private final ScrapeCommandHandler commandHandler;
     private final ObjectMapper objectMapper;
@@ -89,15 +95,30 @@ public class ScraperConsumerFunction {
         var result = commandHandler.handle(payloadMessage);
         context.getLogger().info(
                 String.format(
-                        "Scrape completed for company %s: %d search pages, %d detail pages",
+                        "Scrape completed for company %s: %d search pages, %d detail pages runId=%s searchComplete=%s fullDetailRefresh=%s uniqueJobs=%d errors=%d",
                         result.companyId(),
                         result.searchPagesFetched(),
-                        result.detailPagesFetched()
+                        result.detailPagesFetched(),
+                        result.runId(),
+                        result.searchComplete(),
+                        result.fullDetailRefresh(),
+                        result.jobs().size(),
+                        result.errors().size()
                 )
         );
         if (!result.searchComplete()) {
             context.getLogger().warning(
-                    "Search enumeration was incomplete or inconsistent for company " + result.companyId());
+                    "Search enumeration was incomplete or inconsistent for company " + result.companyId()
+                            + " runId=" + result.runId());
+        }
+        for (String error : result.errors()) {
+            Matcher searchError = SEARCH_ERROR.matcher(error);
+            if (searchError.find()) {
+                Matcher status = HTTP_STATUS.matcher(error);
+                context.getLogger().warning("Search failure companyId=" + result.companyId()
+                        + " runId=" + result.runId() + " page=" + searchError.group(1)
+                        + " reason=" + searchError.group(2) + (status.find() ? " " + status.group() : ""));
+            }
         }
     }
 }

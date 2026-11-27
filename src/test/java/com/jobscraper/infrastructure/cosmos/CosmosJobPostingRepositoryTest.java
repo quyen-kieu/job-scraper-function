@@ -17,13 +17,19 @@ import com.jobscraper.application.normalization.ScrapeCompletedNormalizationHand
 import com.jobscraper.application.persistence.NormalizedPostingPersistenceHandler;
 import com.jobscraper.application.notification.DailyNotificationRequestedEvent;
 import com.jobscraper.infrastructure.storage.RawScrapeStorage;
+import com.jobscraper.function.JobScraperProperties;
+import com.jobscraper.scraper.api.JobSearchHttpClient;
+import com.jobscraper.scraper.api.ScrapeResult;
 import com.jobscraper.scraper.api.ScrapedJob;
+import com.jobscraper.scraper.companies.mckesson.McKessonScraper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.Duration;
+import java.net.http.HttpResponse;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -31,6 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -61,7 +68,7 @@ class CosmosJobPostingRepositoryTest {
         doAnswer(invocation -> {
             Object item = invocation.getArgument(0);
             documents.put(CompanyScrapeState.ID, item);
-            return response(item);
+            return response(null);
         }).when(container).createItem(any(), any(PartitionKey.class), any(CosmosItemRequestOptions.class));
         doAnswer(invocation -> {
             Object item = invocation.getArgument(0);
@@ -106,6 +113,39 @@ class CosmosJobPostingRepositoryTest {
         }).when(query).forEach(any());
         when(container.queryItems(anyString(), any(CosmosQueryRequestOptions.class), eqPostingClass()))
                 .thenReturn(query);
+    }
+
+    @Test
+    void createsControlStateWithoutAResponseBody() {
+        assertThat(repository.upsertIfCurrent(posting("1", T1, "initial"), false)).isTrue();
+        assertThat(repository.findById("company:1", "company")).isPresent();
+        assertThat(repository.reconcile("company", "initial", T1, Set.of("1")).completed()).isTrue();
+        assertThat(repository.lastSuccessfulReconciliationAt("company")).contains(T1);
+    }
+
+    @Test
+    void rejectsMissingEtagBeforeWritingPosting() {
+        CosmosItemResponse<CompanyScrapeState> response = response(null);
+        when(response.getETag()).thenReturn(null);
+        org.mockito.Mockito.doReturn(response).when(container)
+                .createItem(any(CompanyScrapeState.class), any(PartitionKey.class), any(CosmosItemRequestOptions.class));
+
+        assertThatThrownBy(() -> repository.upsertIfCurrent(posting("1", T1, "initial"), false))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("ETag");
+        assertThat(documents).doesNotContainKey("company:1");
+    }
+
+    @Test
+    void readsStateCreatedByConcurrentWriterAfterCreateConflict() {
+        CosmosException conflict = mock(CosmosException.class);
+        when(conflict.getStatusCode()).thenReturn(409);
+        doAnswer(invocation -> {
+            documents.put(CompanyScrapeState.ID, CompanyScrapeState.empty("company"));
+            throw conflict;
+        }).when(container).createItem(any(), any(PartitionKey.class), any(CosmosItemRequestOptions.class));
+
+        assertThat(repository.upsertIfCurrent(posting("1", T1, "initial"), false)).isTrue();
+        assertThat(repository.findById("company:1", "company")).isPresent();
     }
 
     @Test
@@ -227,6 +267,77 @@ class CosmosJobPostingRepositoryTest {
                 .extracting(NormalizedJobPosting::isActive).isEqualTo(false);
         assertThat(notifications.get(2).inactiveCount()).isEqualTo(1);
         org.mockito.Mockito.verify(observations, org.mockito.Mockito.times(7)).upsert(any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void realWorkdayScraperTransitionsFromBackfillToSelectiveDailyScan() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        RawScrapeStorage storage = mock(RawScrapeStorage.class);
+        when(storage.writeSearchPage(anyString(), anyString(), org.mockito.ArgumentMatchers.anyInt(), anyString()))
+                .thenReturn("search");
+        when(storage.writeJobDetail(anyString(), anyString(), anyString(), anyString())).thenReturn("detail");
+        when(storage.writeDescription(anyString(), anyString(), anyString(), anyString())).thenReturn("description");
+        when(storage.writeRunSummary(anyString(), anyString(), anyString())).thenReturn("summary");
+        when(storage.readDescription(anyString(), anyString(), anyString())).thenReturn("Job description");
+        JobSearchHttpClient http = mock(JobSearchHttpClient.class);
+        HttpResponse<String> detail = mock(HttpResponse.class);
+        when(detail.statusCode()).thenReturn(200);
+        when(detail.body()).thenReturn("{\"jobPostingInfo\":{\"jobDescription\":\"<p>Job description</p>\"}}");
+        when(http.get(any())).thenReturn(detail);
+        boolean[] daily = {false};
+        when(http.postJson(any(), anyString())).thenAnswer(invocation -> {
+            int offset = mapper.readTree((String) invocation.getArgument(1)).path("offset").asInt();
+            int total = daily[0] ? 61 : 60;
+            List<Map<String, Object>> jobs = new ArrayList<>();
+            for (int i = offset; i < Math.min(offset + 20, total); i++) {
+                String id = "JR" + (100 + i);
+                jobs.add(Map.of("title", daily[0] && i == 5 ? "Senior Engineer" : "Engineer",
+                        "externalPath", "/job/Texas/Engineer_" + id,
+                        "locationsText", "Texas", "bulletFields", List.of(id)));
+            }
+            HttpResponse<String> response = mock(HttpResponse.class);
+            when(response.statusCode()).thenReturn(200);
+            when(response.body()).thenReturn(mapper.writeValueAsString(
+                    Map.of("total", offset == 0 ? total : 0, "jobPostings", jobs)));
+            return response;
+        });
+        JobScraperProperties properties = new JobScraperProperties();
+        properties.setRequestDelay(Duration.ZERO);
+        McKessonScraper scraper = new McKessonScraper(http, storage, mapper, properties);
+        HybridScrapePolicy policy = new HybridScrapePolicy(repository);
+        var persistence = new NormalizedPostingPersistenceHandler(mapper, repository,
+                mock(JobObservationRepository.class), storage);
+        var normalizer = new ScrapeCompletedNormalizationHandler(mapper, ignored -> {}, repository,
+                ignored -> {}, persistence);
+
+        Instant now = Instant.now();
+        ScrapeResult backfill = scraper.scrape(policy.createContext(
+                new ScrapeCompanyCommand("initial", "company", now), now));
+        assertThat(backfill.searchComplete()).isTrue();
+        assertThat(backfill.detailPagesFetched()).isEqualTo(60);
+        normalize(normalizer, mapper, backfill);
+        assertThat(repository.lastSuccessfulReconciliationAt("company")).contains(backfill.startedAt());
+
+        daily[0] = true;
+        Instant tomorrow = backfill.startedAt().plusSeconds(86400);
+        ScrapeResult incremental = scraper.scrape(policy.createContext(
+                new ScrapeCompanyCommand("daily", "company", tomorrow), tomorrow));
+        assertThat(incremental.fullDetailRefresh()).isFalse();
+        assertThat(incremental.searchComplete()).isTrue();
+        assertThat(incremental.searchPagesFetched()).isEqualTo(4);
+        assertThat(incremental.jobs()).hasSize(61);
+        assertThat(incremental.detailPagesFetched()).isEqualTo(2);
+        normalize(normalizer, mapper, incremental);
+        assertThat(repository.findById("company:JR160", "company")).isPresent();
+    }
+
+    private static void normalize(ScrapeCompletedNormalizationHandler normalizer, ObjectMapper mapper,
+                                  ScrapeResult result) throws Exception {
+        ScrapeCompletedEvent event = new ScrapeCompletedEvent(result.runId(), result.companyId(), result.startedAt(),
+                result.completedAt(), result.searchPagesFetched(), result.detailPagesFetched(), result.blobPaths(),
+                result.errors(), result.jobs(), result.searchComplete(), result.fullDetailRefresh());
+        normalizer.handle(mapper.writeValueAsString(event));
     }
 
     private static void run(ScrapeCompletedNormalizationHandler normalizer, ObjectMapper mapper,

@@ -36,6 +36,9 @@ public class ResendDailyNotificationSender implements DailyNotificationSender {
 
         try {
             CreateEmailResponse response = resendClient.emails().send(request);
+            if (response == null || response.getId() == null || response.getId().isBlank()) {
+                throw new IllegalStateException("Resend returned no email ID for runId=" + event.runId());
+            }
             LOGGER.info(
                     "Sent daily notification email runId=" + event.runId()
                             + " summaryDate=" + event.summaryDate()
@@ -76,4 +79,3 @@ public class ResendDailyNotificationSender implements DailyNotificationSender {
         return subject.toString();
     }
 }
-

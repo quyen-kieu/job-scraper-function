@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,6 +37,7 @@ public abstract class WorkdayScraper implements CompanyScraper {
     private static final int PAGE_SIZE = 20;
     private static final Pattern RELATIVE_DATE = Pattern.compile("^Posted (\\d+) Days? Ago$");
     private static final Pattern FACET_ID = Pattern.compile("^[0-9a-fA-F]{32}$");
+    private static final Logger LOGGER = Logger.getLogger(WorkdayScraper.class.getName());
 
     private final JobSearchHttpClient httpClient;
     private final RawScrapeStorage storage;
@@ -78,6 +80,9 @@ public abstract class WorkdayScraper implements CompanyScraper {
         Map<String, Candidate> candidates = new LinkedHashMap<>();
         SearchScanTracker tracker = new SearchScanTracker();
         int pagesFetched = fetchSearchPages(context, today, candidates, paths, errors, tracker);
+        LOGGER.info("Workday search runId=" + context.runId() + " companyId=" + context.companyId()
+                + " complete=" + tracker.isComplete(candidates.size()) + " "
+                + tracker.diagnostics(candidates.size()));
         int detailsFetched = fetchDetails(context, candidates, paths, errors);
         Instant completedAt = Instant.now();
         List<ScrapedJob> jobs = candidates.values().stream().map(Candidate::job).toList();
@@ -137,7 +142,9 @@ public abstract class WorkdayScraper implements CompanyScraper {
                 }
                 fetched++;
                 parsed.forEach(candidate -> candidates.putIfAbsent(candidate.job().externalJobId(), candidate));
-                tracker.recordPage(root.path("total").intValue(),
+                int reportedTotal = root.path("total").intValue();
+                // Workday reports the total on the first page and often returns zero on later pages.
+                tracker.recordPage(page > 0 && reportedTotal == 0 ? total : reportedTotal,
                         postings.isEmpty() || offset + postings.size() >= total);
                 if (postings.isEmpty() || offset + postings.size() >= total) {
                     break;
