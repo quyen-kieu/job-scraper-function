@@ -73,6 +73,7 @@ class CosmosJobPostingRepositoryTest {
         }).when(container).createItem(any(), any(PartitionKey.class), any(CosmosItemRequestOptions.class));
         doAnswer(invocation -> {
             Object item = invocation.getArgument(0);
+            assertThat(item).isInstanceOf(Map.class);
             documents.put(invocation.getArgument(1), stored(item));
             return response(item);
         }).when(container).replaceItem(any(), anyString(), any(PartitionKey.class), any(CosmosItemRequestOptions.class));
@@ -240,6 +241,21 @@ class CosmosJobPostingRepositoryTest {
     }
 
     @Test
+    void sdkReplaceAndBatchPathsPreserveControlTimestampStrings() throws Exception {
+        Instant at = Instant.parse("2026-11-27T16:40:02.706502987Z");
+        CompanyScrapeState state = CompanyScrapeState.empty("company").begin(at, "run");
+        var replaceDocument = com.azure.cosmos.implementation.InternalObjectNode.fromObject(
+                serializer.serialize(state));
+        ObjectMapper mapper = new ObjectMapper();
+        assertThat(mapper.readTree(replaceDocument.toJson()).path("watermarkAt").asText()).isEqualTo(at.toString());
+
+        var batchDocument = new com.azure.cosmos.implementation.JsonSerializable();
+        batchDocument.set("resourceBody", state, serializer, true);
+        assertThat(mapper.readTree(batchDocument.toJson()).path("resourceBody").path("watermarkAt").asText())
+                .isEqualTo(at.toString());
+    }
+
+    @Test
     void retriesConflictAndRejectsEventWhenWatermarkAdvanced() {
         repository.upsertIfCurrent(posting("1", T1, "old"), false);
         Instant newer = T1.plusSeconds(60);
@@ -389,6 +405,16 @@ class CosmosJobPostingRepositoryTest {
     }
 
     private Object stored(Object item) {
+        if (item instanceof Map<?, ?> document) {
+            Map<String, Object> copy = new LinkedHashMap<>();
+            document.forEach((key, value) -> {
+                if (!(key instanceof String field)) {
+                    throw new IllegalArgumentException("Invalid Cosmos document field");
+                }
+                copy.put(field, value);
+            });
+            return serializer.deserialize(copy, CompanyScrapeState.class);
+        }
         if (item instanceof CompanyScrapeState state) {
             return serializer.deserialize(new LinkedHashMap<>(serializer.serialize(state)), CompanyScrapeState.class);
         }

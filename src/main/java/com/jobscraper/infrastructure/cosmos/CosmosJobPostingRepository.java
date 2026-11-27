@@ -24,6 +24,7 @@ import java.util.Set;
 @ConditionalOnProperty(prefix = "azure.cosmos", name = "enabled", havingValue = "true")
 public class CosmosJobPostingRepository implements JobPostingRepository {
     private static final int MAX_CONFLICT_RETRIES = 30;
+    private static final PreciseCosmosItemSerializer ITEM_SERIALIZER = new PreciseCosmosItemSerializer();
     private final CosmosContainer container;
 
     public CosmosJobPostingRepository(@Qualifier("jobPostingsContainer") CosmosContainer container) {
@@ -122,7 +123,8 @@ public class CosmosJobPostingRepository implements JobPostingRepository {
                 return true;
             }
             try {
-                container.replaceItem(state.item().begin(startedAt, runId), CompanyScrapeState.ID,
+                // SDK 4.63 converts replaceItem inputs before applying the client item serializer.
+                container.replaceItem(ITEM_SERIALIZER.serialize(state.item().begin(startedAt, runId)), CompanyScrapeState.ID,
                         partition, new CosmosItemRequestOptions().setIfMatchETag(state.etag()));
                 return true;
             } catch (CosmosException ex) {
@@ -164,7 +166,7 @@ public class CosmosJobPostingRepository implements JobPostingRepository {
                 return ReconciliationResult.skipped();
             }
             try {
-                container.replaceItem(state.item().complete(), CompanyScrapeState.ID, partition,
+                container.replaceItem(ITEM_SERIALIZER.serialize(state.item().complete()), CompanyScrapeState.ID, partition,
                         new CosmosItemRequestOptions().setIfMatchETag(state.etag()));
                 return new ReconciliationResult(true, state.item().inactiveCount());
             } catch (CosmosException ex) {

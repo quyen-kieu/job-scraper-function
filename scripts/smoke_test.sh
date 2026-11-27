@@ -151,6 +151,7 @@ while [[ "$(date +%s)" -lt "${DEADLINE}" ]]; do
 
   if [[ -n "${RESULT}" ]]; then
     echo "-- Found expected trace: ${RESULT}"
+    SCRAPE_TRACE="${RESULT}"
     SCRAPE_OK=1
     break
   fi
@@ -187,14 +188,51 @@ while [[ "$(date +%s)" -lt "${DEADLINE}" ]]; do
 
   if [[ -n "${RESULT}" ]]; then
     echo "-- Found expected trace: ${RESULT}"
-    echo "== Smoke test PASSED: Resend accepted the email for this run; inbox delivery is not verified. =="
-    exit 0
+    EMAIL_OK=1
+    break
   fi
 
   echo "   ...not yet observed, retrying in ${SMOKE_TEST_POLL_SECS}s"
   sleep "${SMOKE_TEST_POLL_SECS}"
 done
 
-echo "ERROR: timed out after ${SMOKE_TEST_TIMEOUT_SECS}s waiting for the email-sent trace for runId=${RUN_ID}." >&2
-echo "Check NormalizerConsumerFunction / ResendEmailConsumerFunction failures in Application Insights." >&2
-exit 1
+if [[ "${EMAIL_OK:-0}" -ne 1 ]]; then
+  echo "ERROR: timed out after ${SMOKE_TEST_TIMEOUT_SECS}s waiting for the email-sent trace for runId=${RUN_ID}." >&2
+  echo "Check NormalizerConsumerFunction / ResendEmailConsumerFunction failures in Application Insights." >&2
+  exit 1
+fi
+
+if [[ "${SCRAPE_TRACE}" != *" searchComplete=true "* || ! "${SCRAPE_TRACE}" =~ [[:space:]]errors=0($|[[:space:]]) ]]; then
+  echo "ERROR: the smoke scrape was incomplete or reported errors for runId=${RUN_ID}." >&2
+  exit 1
+fi
+if [[ "${SCRAPE_TRACE}" == *" fullDetailRefresh=true "* ]]; then
+  echo "-- Polling Application Insights for successful full reconciliation for runId=${RUN_ID}..."
+  RECONCILE_KQL="traces | where timestamp > ago(1h) | where message contains 'Reconciliation completed companyId=${SMOKE_TEST_COMPANY_ID} runId=${RUN_ID} ' | project timestamp, message | take 1"
+  DEADLINE=$(( $(date +%s) + SMOKE_TEST_TIMEOUT_SECS ))
+  while [[ "$(date +%s)" -lt "${DEADLINE}" ]]; do
+    if ! RESULT=$(az monitor app-insights query \
+      --app "${APP_INSIGHTS_APP_ID}" \
+      --analytics-query "${RECONCILE_KQL}" \
+      --query "tables[0].rows" -o tsv); then
+      echo "WARNING: Application Insights reconciliation-trace query failed; retrying." >&2
+      RESULT=""
+    fi
+    if [[ -n "${RESULT}" ]]; then
+      echo "-- Found expected trace: ${RESULT}"
+      RECONCILE_OK=1
+      break
+    fi
+    echo "   ...not yet observed, retrying in ${SMOKE_TEST_POLL_SECS}s"
+    sleep "${SMOKE_TEST_POLL_SECS}"
+  done
+  if [[ "${RECONCILE_OK:-0}" -ne 1 ]]; then
+    echo "ERROR: timed out waiting for successful full reconciliation for runId=${RUN_ID}." >&2
+    exit 1
+  fi
+elif [[ "${SCRAPE_TRACE}" != *" fullDetailRefresh=false "* ]]; then
+  echo "ERROR: smoke scrape did not report a valid hybrid refresh mode for runId=${RUN_ID}." >&2
+  exit 1
+fi
+
+echo "== Smoke test PASSED: scrape completed and Resend accepted the email for this run; inbox delivery is not verified. =="

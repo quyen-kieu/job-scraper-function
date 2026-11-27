@@ -43,8 +43,9 @@ deployment smoke test does not mean the other companies were triggered. See
 [CI/CD reference](../../.github/workflows/README.md). The smoke test correlates
 the scrape and Resend acceptance traces to the returned run ID and fails if
 the ID is missing or Resend is disabled. `SMOKE_TEST_VERIFY_EMAIL=false` explicitly
-skips the email check. Resend acceptance does not prove inbox delivery, and a
-sent notification can still report a partial scrape or failed reconciliation.
+skips the email and reconciliation checks. Otherwise, the smoke test also requires
+an error-free complete search and, for a full refresh, a successful reconciliation
+trace for that run. Resend acceptance does not prove inbox delivery.
 
 ## Check processing and email
 

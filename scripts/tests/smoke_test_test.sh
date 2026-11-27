@@ -22,7 +22,13 @@ case "$*" in
     done
     if [[ "${query}" == *"Scrape completed for company mckesson:"* ]]; then
       if [[ "${MOCK_SCENARIO}" != "wrong-run" && "${query}" == *" runId=run-123 "* ]]; then
-        echo "Scrape completed for company mckesson: 3 search pages, 60 detail pages runId=run-123 searchComplete=true"
+        complete=true
+        errors=0
+        refresh=true
+        [[ "${MOCK_SCENARIO}" == "incomplete" ]] && complete=false
+        [[ "${MOCK_SCENARIO}" == "scrape-error" ]] && errors=1
+        [[ "${MOCK_SCENARIO}" == "daily" ]] && refresh=false
+        echo "Scrape completed for company mckesson: 3 search pages, 60 detail pages runId=run-123 searchComplete=${complete} fullDetailRefresh=${refresh} uniqueJobs=60 errors=${errors}"
       elif [[ "${query}" != *" runId=run-123 "* ]]; then
         echo "Scrape completed for company mckesson: wrong run"
       fi
@@ -32,6 +38,10 @@ case "$*" in
       fi
     elif [[ "${query}" == *"Processed daily notification request"* ]]; then
       echo "Processed daily notification request runId=run-123"
+    elif [[ "${query}" == *"Reconciliation completed companyId=mckesson runId=run-123 "* ]]; then
+      if [[ "${MOCK_SCENARIO}" != "failed-reconciliation" ]]; then
+        echo "Reconciliation completed companyId=mckesson runId=run-123 inactiveCount=0"
+      fi
     fi ;;
   *) echo "Unexpected az command" >&2; exit 1 ;;
 esac
@@ -90,6 +100,10 @@ check() {
 check accepted pass "Resend accepted the email"
 check wrong-run fail "waiting for the scrape-completed trace"
 check processed-only fail "waiting for the email-sent trace"
+check failed-reconciliation fail "waiting for successful full reconciliation"
+check incomplete fail "smoke scrape was incomplete"
+check scrape-error fail "smoke scrape was incomplete"
+check daily pass "Resend accepted the email"
 check missing-run fail "did not contain a valid run ID"
 check disabled fail "RESEND_ENABLED must be true"
 export SMOKE_TEST_VERIFY_EMAIL=false
