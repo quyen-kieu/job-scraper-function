@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,6 +49,7 @@ import java.util.regex.Pattern;
  */
 @Service
 public class ScrapeCompletedNormalizationHandler {
+    private static final Logger LOGGER = Logger.getLogger(ScrapeCompletedNormalizationHandler.class.getName());
 
     private static final Pattern JOB_DETAIL_FILE_NAME_PATTERN = Pattern.compile("^job-(.+)\\.html$");
     private static final int SCHEMA_VERSION = 1;
@@ -161,7 +163,11 @@ public class ScrapeCompletedNormalizationHandler {
                     event.companyId(), event.runId(), event.startedAt(), seenIds);
             if (reconciliation.completed()) {
                 inactiveCount = reconciliation.inactiveCount();
+                LOGGER.info("Reconciliation completed companyId=" + event.companyId() + " runId=" + event.runId()
+                        + " inactiveCount=" + inactiveCount);
             } else {
+                LOGGER.warning("Reconciliation skipped companyId=" + event.companyId() + " runId=" + event.runId()
+                        + " reason=empty results, disabled persistence, or a newer run");
                 failures.add("Reconciliation skipped: empty results, disabled persistence, or a newer run.");
             }
         }

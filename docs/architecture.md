@@ -61,6 +61,11 @@ or capped run does not reconcile. Partial page and detail failures can still be
 included in a notification. A notification is not proof of inbox delivery or of
 an error-free complete scan.
 
+The Cosmos client writes posting `firstSeenAt` and `lastSeenAt` and control-document
+timestamps as ISO-8601 strings to preserve the precision required by the ordering
+guard. Older documents may contain numeric epoch seconds; readers must support both
+representations until those documents are updated. Kafka timestamp formats are unchanged.
+
 ## Kafka contracts
 
 Topic names are configurable; these are the defaults. Producers use Jackson

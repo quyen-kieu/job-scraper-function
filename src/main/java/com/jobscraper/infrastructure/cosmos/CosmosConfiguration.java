@@ -39,6 +39,7 @@ public class CosmosConfiguration {
                 .endpoint(properties.endpoint())
                 .key(properties.key())
                 .gatewayMode()
+                .customItemSerializer(new PreciseCosmosItemSerializer())
                 .buildClient();
     }
 
@@ -62,4 +63,3 @@ public class CosmosConfiguration {
         return client.getDatabase(properties.databaseName()).getContainer(properties.descriptionHandoffContainer());
     }
 }
-

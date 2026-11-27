@@ -48,6 +48,7 @@ class CosmosJobPostingRepositoryTest {
     private static final Instant T1 = Instant.parse("2026-01-01T00:00:00Z");
     private final CosmosContainer container = mock(CosmosContainer.class);
     private final Map<String, Object> documents = new LinkedHashMap<>();
+    private final PreciseCosmosItemSerializer serializer = new PreciseCosmosItemSerializer();
     private CosmosJobPostingRepository repository;
     private Runnable conflictAction;
 
@@ -67,12 +68,12 @@ class CosmosJobPostingRepositoryTest {
         }).when(container).readItem(anyString(), any(PartitionKey.class), any(Class.class));
         doAnswer(invocation -> {
             Object item = invocation.getArgument(0);
-            documents.put(CompanyScrapeState.ID, item);
+            documents.put(CompanyScrapeState.ID, stored(item));
             return response(null);
         }).when(container).createItem(any(), any(PartitionKey.class), any(CosmosItemRequestOptions.class));
         doAnswer(invocation -> {
             Object item = invocation.getArgument(0);
-            documents.put(invocation.getArgument(1), item);
+            documents.put(invocation.getArgument(1), stored(item));
             return response(item);
         }).when(container).replaceItem(any(), anyString(), any(PartitionKey.class), any(CosmosItemRequestOptions.class));
         doAnswer(invocation -> {
@@ -95,7 +96,7 @@ class CosmosJobPostingRepositoryTest {
                 Object item = operation.getItem();
                 String id = item instanceof CompanyScrapeState state ? state.id()
                         : ((NormalizedJobPosting) item).id();
-                documents.put(id, item);
+                documents.put(id, stored(item));
             });
             CosmosBatchResponse result = mock(CosmosBatchResponse.class);
             when(result.isSuccessStatusCode()).thenReturn(true);
@@ -195,12 +196,47 @@ class CosmosJobPostingRepositoryTest {
 
     @Test
     void controlDocumentRoundTripsThroughCosmosSerializer() {
-        var serializer = com.azure.cosmos.CosmosItemSerializer.DEFAULT_SERIALIZER;
         CompanyScrapeState state = CompanyScrapeState.empty("company").begin(T1, "run").complete();
-        var document = serializer.serialize(state);
+        var document = new java.util.HashMap<>(serializer.serialize(state));
         assertThat(document).containsEntry("recordType", "scrape-control");
         assertThat(document).doesNotContainKey("externalJobId");
         assertThat(serializer.deserialize(document, CompanyScrapeState.class)).isEqualTo(state);
+    }
+
+    @Test
+    void controlDocumentPreservesSubsecondWatermarksThroughCosmosSerializer() {
+        CompanyScrapeState state = CompanyScrapeState.empty("company")
+                .begin(Instant.parse("2026-11-27T16:40:02.706502987Z"), "run").complete();
+
+        var document = new java.util.HashMap<>(serializer.serialize(state));
+        assertThat(document.get("watermarkAt")).isEqualTo("2026-11-27T16:40:02.706502987Z");
+        assertThat(serializer.deserialize(document, CompanyScrapeState.class)).isEqualTo(state);
+    }
+
+    @Test
+    void preservesPostingTimestampsAndReadsLegacyNumericValues() {
+        Instant at = Instant.parse("2026-11-27T16:40:02.706502987Z");
+        NormalizedJobPosting original = posting("1", at, "run");
+        var document = new java.util.HashMap<>(serializer.serialize(original));
+        assertThat(document.get("lastSeenAt")).isEqualTo(at.toString());
+        assertThat(serializer.deserialize(document, NormalizedJobPosting.class)).isEqualTo(original);
+
+        var legacy = new java.util.HashMap<>(
+                com.azure.cosmos.CosmosItemSerializer.DEFAULT_SERIALIZER.serialize(original));
+        legacy.put("firstSeenAt", 1795797602.706503d);
+        legacy.put("lastSeenAt", 1795797602.706503d);
+        assertThat(serializer.deserialize(legacy, NormalizedJobPosting.class).lastSeenAt())
+                .isEqualTo(Instant.parse("2026-11-27T16:40:02.706503Z"));
+    }
+
+    @Test
+    void readsLegacyNumericControlTimestamps() {
+        CompanyScrapeState state = CompanyScrapeState.empty("company").begin(T1, "run").complete();
+        var legacy = new java.util.HashMap<>(
+                com.azure.cosmos.CosmosItemSerializer.DEFAULT_SERIALIZER.serialize(state));
+        legacy.put("watermarkAt", (double) T1.getEpochSecond());
+        legacy.put("lastSuccessfulReconciliationAt", (double) T1.getEpochSecond());
+        assertThat(serializer.deserialize(legacy, CompanyScrapeState.class)).isEqualTo(state);
     }
 
     @Test
@@ -350,6 +386,16 @@ class CosmosJobPostingRepositoryTest {
     private static ScrapedJob job(String id, String title, String path) {
         return new ScrapedJob(id, title, "TX", LocalDate.of(2026, 1, 1), "https://example.test/" + id,
                 null, path);
+    }
+
+    private Object stored(Object item) {
+        if (item instanceof CompanyScrapeState state) {
+            return serializer.deserialize(new LinkedHashMap<>(serializer.serialize(state)), CompanyScrapeState.class);
+        }
+        if (item instanceof NormalizedJobPosting posting) {
+            return serializer.deserialize(new LinkedHashMap<>(serializer.serialize(posting)), NormalizedJobPosting.class);
+        }
+        throw new IllegalArgumentException("Unexpected Cosmos document type");
     }
 
     @SuppressWarnings("unchecked")
