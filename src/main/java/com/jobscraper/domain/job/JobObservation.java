@@ -9,13 +9,11 @@ import java.util.Objects;
  *
  * <p>Persisted in the Cosmos DB {@code job-observations} container, partitioned by
  * {@code /companyId}. Unlike {@link NormalizedJobPosting}, which holds only the current
- * state, this record retains at most one observation per posting and UTC persistence date for
+ * state, this record retains at most one observation per posting and UTC scrape date for
  * later month rebuilds. Multiple runs or redeliveries on the same date replace that observation.</p>
  *
- * <p><b>Note on {@code runId}:</b> the {@code job.postings.normalized} event does not carry
- * the originating scrape run ID. Consequently, {@code runId} here identifies the persistence
- * invocation that recorded this observation, not the upstream Kafka scrape command's run ID.
- * Wiring the true scrape {@code runId} through to persistence requires a wire-contract change.</p>
+ * <p>For legacy events without a scrape run ID, the persistence date and a generated
+ * invocation ID are used instead.</p>
  */
 public record JobObservation(
         String id,
@@ -58,8 +56,7 @@ public record JobObservation(
      * Builds the deterministic document ID for a job observation.
      *
      * <p>Format: {@code {companyId}:{scrapeDate}:{externalJobId}}. Ensures the same posting is
-     * stored once per company and date, even if Kafka redelivers the event. The persistence
-     * handler supplies the current UTC date, which can differ from the original scrape date.</p>
+     * stored once per company and date, even if Kafka redelivers the event.</p>
      *
      * @param companyId the company ID
      * @param scrapeDate the observation date

@@ -21,7 +21,23 @@ public record ScrapeCompletedEvent(
         int detailPagesFetched,
         List<String> blobPaths,
         List<String> errors,
-        List<ScrapedJob> jobs) {
+        List<ScrapedJob> jobs,
+        boolean searchComplete,
+        Boolean fullDetailRefresh) {
+
+    public ScrapeCompletedEvent(String runId, String companyId, Instant startedAt, Instant completedAt,
+                                int searchPagesFetched, int detailPagesFetched, List<String> blobPaths,
+                                List<String> errors, List<ScrapedJob> jobs, boolean searchComplete) {
+        this(runId, companyId, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
+                blobPaths, errors, jobs, searchComplete, null);
+    }
+
+    public ScrapeCompletedEvent(String runId, String companyId, Instant startedAt, Instant completedAt,
+                                int searchPagesFetched, int detailPagesFetched, List<String> blobPaths,
+                                List<String> errors, List<ScrapedJob> jobs) {
+        this(runId, companyId, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
+                blobPaths, errors, jobs, false, null);
+    }
 
     /**
      * Creates an event without structured job data. Also matches the wire shape of messages
@@ -37,7 +53,7 @@ public record ScrapeCompletedEvent(
             List<String> blobPaths,
             List<String> errors) {
         this(runId, companyId, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
-                blobPaths, errors, List.of());
+                blobPaths, errors, List.of(), false, null);
     }
 
     public ScrapeCompletedEvent {
@@ -58,4 +74,3 @@ public record ScrapeCompletedEvent(
         }
     }
 }
-

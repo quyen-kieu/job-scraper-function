@@ -12,10 +12,8 @@ import org.springframework.stereotype.Component;
 /**
  * Kafka-triggered function for the {@code job.scrape.completed} topic.
  *
- * <p>Responsible only for canonicalization and downstream event publication via
- * {@link ScrapeCompletedNormalizationHandler}. Durable Cosmos DB persistence is intentionally
- * not performed here; that responsibility is delegated to {@link PersistenceConsumerFunction},
- * which consumes {@code job.postings.normalized}.</p>
+ * <p>Delegates canonicalization, synchronous persistence, reconciliation, and downstream
+ * event publication to {@link ScrapeCompletedNormalizationHandler}.</p>
  *
  * <p>Stage 5 applies concrete title/level normalization rules in
  * {@link ScrapeCompletedNormalizationHandler}. This function remains the sole owner of

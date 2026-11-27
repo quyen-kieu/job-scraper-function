@@ -100,6 +100,7 @@ class FirstCitizensScraperTest {
         when(httpClient.get(uri(1))).thenReturn(first);
         ScrapeResult capped = scraper.scrape(context());
         assertThat(capped.searchPagesFetched()).isEqualTo(1);
+        assertThat(capped.searchComplete()).isFalse();
         assertThat(capped.jobs()).hasSize(2);
         verify(httpClient, never()).get(uri(2));
     }
@@ -133,6 +134,7 @@ class FirstCitizensScraperTest {
         ScrapeResult result = scraper.scrape(context());
 
         assertThat(result.jobs().get(0).descriptionFormat()).isEqualTo(DescriptionFormat.PLAIN_TEXT);
+        assertThat(result.searchComplete()).isTrue();
         verify(storage).writeDescription(COMPANY_ID, "run-1", "123", "Build systems");
     }
 
@@ -178,6 +180,7 @@ class FirstCitizensScraperTest {
         assertThat(result.errors()).isEmpty();
         assertThat(result.jobs()).isEmpty();
         assertThat(result.searchPagesFetched()).isEqualTo(1);
+        assertThat(result.searchComplete()).isTrue();
     }
 
     @Test
@@ -200,6 +203,7 @@ class FirstCitizensScraperTest {
         when(httpClient.get(uri(2))).thenReturn(empty);
         ScrapeResult result = scraper.scrape(context());
         assertThat(result.jobs()).hasSize(2);
+        assertThat(result.searchComplete()).isFalse();
         assertThat(result.errors()).singleElement().asString().contains("empty before reaching the reported total");
     }
 

@@ -14,7 +14,7 @@ import java.time.Instant;
  * Application service that deserializes a {@code job.scrape.commands} message
  * and delegates to the appropriate company scraper.
  *
- * <p>This service is stateless and thread-safe. It is used by
+ * <p>It is used by
  * {@link com.jobscraper.function.ScraperConsumerFunction} to process
  * Kafka messages without business logic in the function class.</p>
  */
@@ -24,14 +24,21 @@ public class ScrapeCommandHandler {
     private final ObjectMapper objectMapper;
     private final CompanyScraperRegistry registry;
     private final ScrapeCompletedPublisher scrapeCompletedPublisher;
+    private final HybridScrapePolicy hybridScrapePolicy;
     private final Clock clock;
 
     @Autowired
     public ScrapeCommandHandler(
             ObjectMapper objectMapper,
             CompanyScraperRegistry registry,
-            ScrapeCompletedPublisher scrapeCompletedPublisher) {
-        this(objectMapper, registry, scrapeCompletedPublisher, Clock.systemUTC());
+            ScrapeCompletedPublisher scrapeCompletedPublisher,
+            HybridScrapePolicy hybridScrapePolicy) {
+        this(objectMapper, registry, scrapeCompletedPublisher, hybridScrapePolicy, Clock.systemUTC());
+    }
+
+    ScrapeCommandHandler(ObjectMapper objectMapper, CompanyScraperRegistry registry,
+                         ScrapeCompletedPublisher scrapeCompletedPublisher) {
+        this(objectMapper, registry, scrapeCompletedPublisher, null, Clock.systemUTC());
     }
 
     ScrapeCommandHandler(
@@ -39,9 +46,16 @@ public class ScrapeCommandHandler {
             CompanyScraperRegistry registry,
             ScrapeCompletedPublisher scrapeCompletedPublisher,
             Clock clock) {
+        this(objectMapper, registry, scrapeCompletedPublisher, null, clock);
+    }
+
+    ScrapeCommandHandler(ObjectMapper objectMapper, CompanyScraperRegistry registry,
+                         ScrapeCompletedPublisher scrapeCompletedPublisher,
+                         HybridScrapePolicy hybridScrapePolicy, Clock clock) {
         this.objectMapper = objectMapper;
         this.registry = registry;
         this.scrapeCompletedPublisher = scrapeCompletedPublisher;
+        this.hybridScrapePolicy = hybridScrapePolicy;
         this.clock = clock;
     }
 
@@ -76,11 +90,9 @@ public class ScrapeCommandHandler {
     public ScrapeResult handle(String json) throws Exception {
         ScrapeCompanyCommand command = objectMapper.readValue(json, ScrapeCompanyCommand.class);
 
-        ScrapeContext context = new ScrapeContext(
-                command.runId(),
-                command.companyId(),
-                command.requestedAt()
-        );
+        ScrapeContext context = hybridScrapePolicy == null
+                ? new ScrapeContext(command.runId(), command.companyId(), command.requestedAt())
+                : hybridScrapePolicy.createContext(command, Instant.now(clock));
 
         ScrapeResult result = registry.find(command.companyId())
                 .orElseThrow(() -> new UnknownCompanyScraperException(
@@ -103,7 +115,9 @@ public class ScrapeCommandHandler {
                 result.detailPagesFetched(),
                 result.blobPaths(),
                 result.errors(),
-                result.jobs()
+                result.jobs(),
+                result.searchComplete(),
+                result.fullDetailRefresh()
         );
     }
 

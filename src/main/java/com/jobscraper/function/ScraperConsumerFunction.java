@@ -95,5 +95,9 @@ public class ScraperConsumerFunction {
                         result.detailPagesFetched()
                 )
         );
+        if (!result.searchComplete()) {
+            context.getLogger().warning(
+                    "Search enumeration was incomplete or inconsistent for company " + result.companyId());
+        }
     }
 }

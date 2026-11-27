@@ -82,6 +82,7 @@ class WorkdayCompanyScrapersTest {
 
         assertThat(result.errors()).isEmpty();
         assertThat(result.searchPagesFetched()).isEqualTo(1);
+        assertThat(result.searchComplete()).isTrue();
         assertThat(result.detailPagesFetched()).isEqualTo(1);
         assertThat(result.jobs()).hasSize(1);
         var job = result.jobs().get(0);
@@ -135,6 +136,51 @@ class WorkdayCompanyScrapersTest {
         assertThat(result.errors()).singleElement().asString().contains("job ID does not match");
         assertThat(result.jobs().get(0).descriptionPath()).isNull();
         verify(storage, never()).writeDescription(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void doesNotReportCappedWorkdaySearchAsComplete() throws Exception {
+        properties.setMaxSearchPagesPerRun(1);
+        HttpResponse<String> search = response(200, "{\"total\":21,\"jobPostings\":[{\"title\":\"Engineer\","
+                + "\"externalPath\":\"/job/Texas/Engineer_R123\",\"bulletFields\":[\"R123\"]}]}");
+        HttpResponse<String> detail = response(200,
+                "{\"jobPostingInfo\":{\"jobReqId\":\"R123\",\"jobDescription\":\"Build systems\"}}");
+        when(httpClient.postJson(any(), anyString())).thenReturn(search);
+        when(httpClient.get(any())).thenReturn(detail);
+
+        var result = scraper("capital-one").scrape(
+                new ScrapeContext("run-123", "capital-one", Instant.now()));
+
+        assertThat(result.searchComplete()).isFalse();
+    }
+
+    @Test
+    void rejectsNegativeWorkdayTotal() throws Exception {
+        HttpResponse<String> search = response(200, "{\"total\":-1,\"jobPostings\":[]}");
+        when(httpClient.postJson(any(), anyString())).thenReturn(search);
+
+        var result = scraper("capital-one").scrape(
+                new ScrapeContext("run-123", "capital-one", Instant.now()));
+
+        assertThat(result.searchComplete()).isFalse();
+        assertThat(result.errors()).singleElement().asString().contains("Invalid Workday search response");
+    }
+
+    @Test
+    void incrementalRunSkipsUnchangedDetailRequests() throws Exception {
+        HttpResponse<String> search = response(200, "{\"total\":1,\"jobPostings\":[{\"title\":\"Engineer\","
+                + "\"externalPath\":\"/job/Texas/Engineer_R123\",\"bulletFields\":[\"R123\"]}]}");
+        when(httpClient.postJson(any(), anyString())).thenReturn(search);
+        var context = new ScrapeContext("run-123", "capital-one", Instant.now(), false,
+                (job, reliableDate) -> false);
+
+        var result = scraper("capital-one").scrape(context);
+
+        assertThat(result.searchComplete()).isTrue();
+        assertThat(result.fullDetailRefresh()).isFalse();
+        assertThat(result.detailPagesFetched()).isZero();
+        assertThat(result.jobs()).hasSize(1);
+        verify(httpClient, never()).get(any());
     }
 
     @Test

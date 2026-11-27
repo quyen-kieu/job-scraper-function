@@ -53,8 +53,9 @@ returned. None of these checks proves inbox delivery or database persistence.
    corresponding function logs. Check command consumption, scrape completion,
    page counts, and any collected errors for each company.
 2. Check normalization, persistence, metrics, and notification logs separately.
-   A notification is published without waiting for persistence; a sent email
-   does not establish that the database has been updated.
+   The normalizer persists postings and observations before publishing the
+   notification. A skipped or failed reconciliation is reported in the summary;
+   verify actual postings independently.
 3. Check the email provider's delivery status and the recipient's inbox. Email
    provider acceptance alone is not proof of inbox delivery. A partial scrape
    can still send an email with failures included.
@@ -73,7 +74,7 @@ For example, query the postings container:
 SELECT c.companyId, c.externalJobId, c.titleRaw, c.location, c.datePosted, c.url,
        c.descriptionHtml, c.descriptionPlainText
 FROM c
-WHERE c.companyId = "mckesson"
+WHERE c.companyId = "mckesson" AND IS_DEFINED(c.externalJobId)
 ```
 
 Use the configured database and container names if they differ from the
@@ -81,10 +82,10 @@ defaults. `descriptionHtml` contains source HTML where available, and
 `descriptionPlainText` contains readable text. Older documents may contain only
 the legacy `description` field until they are next updated. Treat HTML as
 untrusted and sanitize it before rendering.
-Salary is not a separate field. Older documents or jobs with missing
+`salaryRange` is populated from details when available; older documents or jobs with missing
 or failed detail requests may have no description. A successful future scrape
-after deployment can populate discovered jobs; records outside its search-page
-cap are not automatically backfilled.
+after deployment can populate discovered jobs. A configured positive page cap
+can prevent a complete backfill and reconciliation.
 
 To migrate legacy `description` fields on records that are not revisited, set
 `AZURE_COSMOS_ENDPOINT`, `AZURE_COSMOS_KEY`, `AZURE_COSMOS_DATABASE_NAME`, and

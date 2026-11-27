@@ -38,16 +38,23 @@ public final class OracleRecruitingResponseParser {
      *
      * @param objectMapper the JSON mapper
      * @param json the raw response body
-     * @return the parsed page; an empty page if the response has no items
-     * @throws IOException if the body is not valid JSON
+     * @return the parsed page
+     * @throws IOException if the body is not valid JSON or lacks required search data
      */
     public static OracleSearchPage parseSearchPage(ObjectMapper objectMapper, String json) throws IOException {
-        JsonNode search = objectMapper.readTree(json).path("items").path(0);
+        JsonNode root = objectMapper.readTree(json);
+        JsonNode search = root == null ? null : root.path("items").path(0);
+        if (search == null || !search.isObject() || !search.path("requisitionList").isArray()
+                || !search.path("TotalJobsCount").isIntegralNumber()
+                || !search.path("TotalJobsCount").canConvertToInt()
+                || search.path("TotalJobsCount").intValue() < 0) {
+            throw new IOException("Invalid Oracle search response");
+        }
         List<OracleRequisitionSummary> requisitions = new ArrayList<>();
         for (JsonNode requisition : search.path("requisitionList")) {
             String id = requisition.path("Id").asText("");
-            if (id.isBlank()) {
-                continue;
+            if (id.isBlank() || requisition.path("Title").asText("").isBlank()) {
+                throw new IOException("Oracle search requisition is missing an ID or title");
             }
             requisitions.add(new OracleRequisitionSummary(
                     id,
@@ -55,7 +62,7 @@ public final class OracleRecruitingResponseParser {
                     requisition.path("PrimaryLocation").asText("").trim(),
                     requisition.path("PostedDate").asText("").trim()));
         }
-        return new OracleSearchPage(search.path("TotalJobsCount").asInt(0), requisitions);
+        return new OracleSearchPage(search.path("TotalJobsCount").intValue(), requisitions);
     }
 
     /**

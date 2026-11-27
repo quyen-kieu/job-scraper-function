@@ -14,6 +14,7 @@ import com.jobscraper.application.command.ScrapeCompletedEvent;
 import com.jobscraper.application.normalization.ScrapeCompletedNormalizationHandler;
 import com.jobscraper.scraper.api.ScrapedJob;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
@@ -36,6 +37,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class NormalizedPostingPersistenceHandlerTest {
@@ -51,6 +53,12 @@ class NormalizedPostingPersistenceHandlerTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final Clock fixedClock = Clock.fixed(Instant.parse("2026-08-16T12:00:00Z"), ZoneOffset.UTC);
+
+    @BeforeEach
+    void useDefaultConditionalWrite() {
+        lenient().when(postingRepository.upsertIfCurrent(any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenCallRealMethod();
+    }
 
     @Test
     void shouldUpsertPostingAndObservation() throws Exception {
@@ -286,6 +294,7 @@ class NormalizedPostingPersistenceHandlerTest {
         assertThat(serialized).doesNotContainKeys("descriptionPath", "descriptionFormat");
         assertThat(serialized).containsEntry("descriptionPlainText", "Full description");
         assertThat(serialized).containsEntry("descriptionHtml", "<p>Full description</p>");
+        assertThat(serialized).containsEntry("isActive", true);
         assertThat(serializer.deserialize(serialized, NormalizedJobPosting.class).description()).isNull();
         assertThat(serializer.deserialize(serialized, NormalizedJobPosting.class).descriptionHtml())
                 .isEqualTo("<p>Full description</p>");
@@ -313,6 +322,15 @@ class NormalizedPostingPersistenceHandlerTest {
     }
 
     @Test
+    void hybridObservationUsesOriginalRunAndScrapeDate() throws Exception {
+        newHandler().persist(buildPosting().withRun("origin-run", false));
+        ArgumentCaptor<JobObservation> captor = ArgumentCaptor.forClass(JobObservation.class);
+        verify(observationRepository).upsert(captor.capture());
+        assertThat(captor.getValue().runId()).isEqualTo("origin-run");
+        assertThat(captor.getValue().scrapeDate()).isEqualTo(LocalDate.of(2026, 8, 15));
+    }
+
+    @Test
     void shouldPropagateRepositoryFailureSoOffsetIsNotCommitted() throws Exception {
         NormalizedJobPosting posting = buildPosting();
         doThrow(new IllegalStateException("Cosmos unavailable")).when(postingRepository).upsert(posting);
@@ -320,6 +338,22 @@ class NormalizedPostingPersistenceHandlerTest {
         assertThatThrownBy(() -> newHandler().handle(objectMapper.writeValueAsString(posting)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Cosmos unavailable");
+    }
+
+    @Test
+    void shouldNotPersistEventsAlreadyWrittenByNormalizer() throws Exception {
+        NormalizedJobPosting posting = buildPosting().withRun("run", true);
+        assertThat(newHandler().handle(objectMapper.writeValueAsString(posting))).isEqualTo(posting);
+        verify(postingRepository, never()).upsertIfCurrent(any(), org.mockito.ArgumentMatchers.anyBoolean());
+        verify(observationRepository, never()).upsert(any());
+    }
+
+    @Test
+    void staleEventDoesNotWriteAnObservation() throws Exception {
+        org.mockito.Mockito.doReturn(false).when(postingRepository)
+                .upsertIfCurrent(any(), org.mockito.ArgumentMatchers.anyBoolean());
+        assertThat(newHandler().persist(buildPosting())).isEmpty();
+        verify(observationRepository, never()).upsert(any());
     }
 
     private NormalizedPostingPersistenceHandler newHandler() {

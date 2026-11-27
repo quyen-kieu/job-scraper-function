@@ -11,9 +11,9 @@ using free tier cloud services. These pillars drive the design decisions and
 project outcomes.
 
 The configured sources are McKesson, GM Financial, First Citizens Bank,
-Frost Bank, CVS Health, Citi, Fannie Mae, Humana, and Capital One. The local sample
-has no search-page cap; Azure uses a configurable cap, so results are not
-necessarily exhaustive. See [company sources](docs/company-sources.md)
+Frost Bank, CVS Health, Citi, Fannie Mae, Humana, and Capital One. Search pages
+are uncapped by default, but source changes and failures can still make results
+incomplete. See [company sources](docs/company-sources.md)
 for the searches, source-specific behavior, and implementations.
 
 ## Get started

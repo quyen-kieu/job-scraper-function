@@ -33,6 +33,8 @@ class JobScraperPropertiesTest {
     @Test
     void pageLimitCanBePositiveOrUnlimitedButNotNegative() {
         JobScraperProperties properties = new JobScraperProperties();
+        assertThat(properties.canFetchSearchPage(100)).isTrue();
+        properties.setMaxSearchPagesPerRun(3);
         assertThat(properties.canFetchSearchPage(2)).isTrue();
         assertThat(properties.canFetchSearchPage(3)).isFalse();
         properties.setMaxSearchPagesPerRun(0);

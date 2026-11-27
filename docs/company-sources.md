@@ -17,15 +17,20 @@ change and requests may fail or be capped.
 | Capital One | `capital-one` | [Workday search](https://capitalone.wd12.myworkdayjobs.com/Capital_One/?workerSubType=a12c70bf789e10572aab8e8909a619ae&timeType=2ed180e199081055c65d9d6853aa022d&locations=5303cb0ddb47102d5fa3abc17b27051d&locations=5303cb0ddb47102d5fa459dc37b705c5&locations=af51744fb4fc010ca9b81af56b6b0000&locations=e1c37850645e101ce070e09523230000&jobFamilyGroup=797094e02d441000c3f4fece96e10000&jobFamilyGroup=a3ffb53edaa61000c3f5dc76643a0000&jobFamilyGroup=23c40d87cd84100035bd9201b2bf0000&jobFamilyGroup=c456977f3e611000c3e1be4b227f0000&jobFamilyGroup=23c40d87cd84100035bd7d9296540000&jobFamilyGroup=a12c70bf789e105802e9e79458dc29ab&jobFamilyGroup=797094e02d441000c3f51c4997090000&jobFamilyGroup=eaacc21c45691000c3e9ee9790cc0000) using the [Capital One scraper](../src/main/java/com/jobscraper/scraper/companies/capitalone/CapitalOneScraper.java). |
 
 Company enablement and page limits are configurable; see
-[`local.settings.sample.json`](../local.settings.sample.json). The local sample
-sets `JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN=0` for no page cap. A positive value
-limits pages; the Azure template and the application default use three.
-Requests use a 300 ms delay by default.
-McKesson, GM Financial, Frost Bank, CVS, Citi, Fannie Mae, Humana, and Capital One attempt a detail request for every
-distinct job discovered within those pages, including after individual failures.
-First Citizens instead extracts descriptions from search responses. There is
-no detail-page cap. Larger runs require more time and requests and can incur
-additional storage and source-site traffic.
+[`local.settings.sample.json`](../local.settings.sample.json). The application,
+local sample, and Azure template set `JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN=0`
+for no page cap. A positive value limits pages and prevents a capped scan from
+reconciling. Requests use a 300 ms delay by default.
+
+The first successful run for a company fetches all details. Later runs scan all
+search pages and fetch details for new, reactivated, or changed title, location,
+or URL, or when a description is missing; Oracle's absolute search date is also
+compared. Workday's relative search dates are not used for change detection.
+Seven UTC calendar days after the last successful full reconciliation, the next
+run fetches all details again. First Citizens embeds descriptions in its search
+responses, so it has no separate detail requests and refreshes those descriptions
+on each run. The first run after upgrading is a full backfill. Larger runs require
+more time and requests and can incur additional storage and source-site traffic.
 
 McKesson's Workday facet IDs can be overridden with
 `JOB_SCRAPER_MCKESSON_STATE_FACET_ID`, `JOB_SCRAPER_MCKESSON_JOB_FAMILY_FACET_ID`,
@@ -45,8 +50,9 @@ unambiguous `JR`-number suffix from its job path; results without either are
 reported as errors.
 The search returns relative dates; the scraper estimates exact "today",
 "yesterday", and "N days ago" values using UTC. "30+ days ago" is left unknown
-unless a detail response supplies an absolute date; the normalizer substitutes
-the current date when the scraper leaves a date unknown. Detail requests obtain
+unless a detail response supplies an absolute date; the normalizer retains the
+stored date for skipped details and otherwise substitutes the current date when
+the scraper leaves a date unknown. Detail requests obtain
 descriptions, salary, and absolute dates when available. Jobs with multiple
 locations can include locations outside Texas.
 
@@ -85,8 +91,7 @@ filter. Override them with comma-separated `JOB_SCRAPER_HUMANA_JOB_FAMILY_FACET_
 and update the corresponding Bicep parameter for deployed environments.
 Workday may change these IDs. Humana requisition IDs have the form `R-123456`;
 if the search result omits one, the scraper can extract an unambiguous ID from
-the job path. Azure's default three-page limit fetches at most 60 search results,
-so additional matching jobs may be omitted.
+the job path.
 
 Capital One uses the selected regular, full-time worker filters and all eight
 requested job-family groups, along with Plano, Frisco, US Remote, and Remote -
@@ -99,5 +104,4 @@ other locations. Override the filters with
 `JOB_SCRAPER_CAPITAL_ONE_JOB_FAMILY_FACET_IDS`. Update the corresponding Bicep
 parameters in deployed environments. Workday IDs can change. Capital One
 requisition IDs have the form `R1234567`; if the search result omits one, the
-scraper can extract an unambiguous ID from the job path. Azure's default three-page
-limit fetches at most 60 search results, so additional matching jobs may be omitted.
+scraper can extract an unambiguous ID from the job path.

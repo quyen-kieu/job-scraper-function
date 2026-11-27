@@ -36,6 +36,6 @@ class KafkaPublisherConfigurationTest {
         assertThat(properties.get(ProducerConfig.ACKS_CONFIG)).isEqualTo("all");
         assertThat(properties.get(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG)).isEqualTo(true);
         assertThat(properties.get(ProducerConfig.RETRIES_CONFIG)).isEqualTo(3);
+        assertThat(properties.get(ProducerConfig.MAX_REQUEST_SIZE_CONFIG)).isEqualTo(1_048_576);
     }
 }
-

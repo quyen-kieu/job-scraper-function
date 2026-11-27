@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OracleRecruitingResponseParserTest {
 
@@ -28,9 +29,25 @@ class OracleRecruitingResponseParserTest {
     }
 
     @Test
-    void shouldReturnEmptyPageWhenResponseHasNoItems() throws Exception {
-        OracleSearchPage page = OracleRecruitingResponseParser.parseSearchPage(objectMapper, "{\"items\":[]}");
+    void shouldRejectSearchResponseWhenItemsAreMissing() {
+        assertThatThrownBy(() -> OracleRecruitingResponseParser.parseSearchPage(objectMapper, "{\"items\":[]}"))
+                .hasMessageContaining("Invalid Oracle search response");
+    }
 
+    @Test
+    void shouldRejectMissingCountAndIncompleteRequisitions() {
+        assertThatThrownBy(() -> OracleRecruitingResponseParser.parseSearchPage(
+                objectMapper, "{\"items\":[{\"requisitionList\":[]}]}"))
+                .hasMessageContaining("Invalid Oracle search response");
+        assertThatThrownBy(() -> OracleRecruitingResponseParser.parseSearchPage(
+                objectMapper, "{\"items\":[{\"TotalJobsCount\":1,\"requisitionList\":[{\"Title\":\"Engineer\"}]}]}"))
+                .hasMessageContaining("missing an ID or title");
+    }
+
+    @Test
+    void shouldAcceptExplicitEmptyResults() throws Exception {
+        OracleSearchPage page = OracleRecruitingResponseParser.parseSearchPage(objectMapper,
+                "{\"items\":[{\"TotalJobsCount\":0,\"requisitionList\":[]}]}");
         assertThat(page.totalJobsCount()).isZero();
         assertThat(page.requisitions()).isEmpty();
     }

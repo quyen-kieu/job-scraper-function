@@ -85,6 +85,7 @@ class OracleRecruitingScraperTest {
 
         assertThat(result.companyId()).isEqualTo("gm-financial");
         assertThat(result.searchPagesFetched()).isEqualTo(1);
+        assertThat(result.searchComplete()).isTrue();
         assertThat(result.detailPagesFetched()).isEqualTo(3);
         assertThat(result.errors()).isEmpty();
         assertThat(result.blobPaths()).hasSize(5); // 1 search page + 3 details + 1 run summary
@@ -107,6 +108,23 @@ class OracleRecruitingScraperTest {
     }
 
     @Test
+    void incrementalRunSkipsUnchangedDetailRequests() throws Exception {
+        HttpResponse<String> search = response(singlePageSearch());
+        when(httpClient.get(searchUri())).thenReturn(search);
+        ScrapeContext context = new ScrapeContext("run-1", "gm-financial", Instant.now(), false,
+                (job, reliableDate) -> false);
+
+        ScrapeResult result = scraper.scrape(context);
+
+        assertThat(result.searchComplete()).isTrue();
+        assertThat(result.detailPagesFetched()).isZero();
+        assertThat(result.jobs()).hasSize(3);
+        verify(httpClient, never()).get(detailUriFor("261197"));
+        verify(httpClient, never()).get(detailUriFor("261186"));
+        verify(httpClient, never()).get(detailUriFor("261150"));
+    }
+
+    @Test
     void shouldPageUntilSearchPageCapAndDeduplicateRequisitions() throws Exception {
         properties.setMaxSearchPagesPerRun(2);
         // Real fixture declares TotalJobsCount=53, so more pages exist than the cap allows.
@@ -120,6 +138,7 @@ class OracleRecruitingScraperTest {
         ScrapeResult result = scraper.scrape(new ScrapeContext("run-2", "gm-financial", Instant.now()));
 
         assertThat(result.searchPagesFetched()).isEqualTo(2);
+        assertThat(result.searchComplete()).isFalse();
         assertThat(result.detailPagesFetched()).isEqualTo(3);
         assertThat(result.jobs()).hasSize(3);
         verify(httpClient).get(SITE.searchUri(0, OracleRecruitingScraper.PAGE_SIZE));
@@ -144,6 +163,7 @@ class OracleRecruitingScraperTest {
 
         assertThat(result.errors()).isEmpty();
         assertThat(result.searchPagesFetched()).isEqualTo(4);
+        assertThat(result.searchComplete()).isTrue();
         assertThat(result.jobs()).extracting(ScrapedJob::externalJobId)
                 .containsExactly("1000", "1001", "1002", "1003");
         verify(httpClient, never()).get(SITE.searchUri(4, OracleRecruitingScraper.PAGE_SIZE));
@@ -164,6 +184,7 @@ class OracleRecruitingScraperTest {
         ScrapeResult result = scraper.scrape(new ScrapeContext("run-1", "gm-financial", Instant.now()));
 
         assertThat(result.jobs()).hasSize(1);
+        assertThat(result.searchComplete()).isFalse();
         assertThat(result.errors()).singleElement().asString().contains("empty before reaching the reported total");
     }
 
@@ -273,5 +294,3 @@ class OracleRecruitingScraperTest {
         return response;
     }
 }
-
-

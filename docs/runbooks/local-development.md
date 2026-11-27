@@ -28,11 +28,12 @@ it. Do not paste the resulting file into issues, logs, or chats.
 The sample sets `JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN` to `0`, which removes
 the search-page cap for local scrapes. Set a positive number to restore a cap;
 negative values are invalid. Existing local settings files must be updated
-separately. Azure's Bicep settings retain the three-page limit.
+separately. The application and Azure Bicep settings also default to uncapped.
 Use `RAW_STORAGE_MODE=cosmos` and enable Cosmos to exercise the cloud handoff
 container; it must exist with a 30-day TTL before the scraper runs.
-When Cosmos is disabled, no-op repositories discard writes and every posting
-is classified as new. When Resend is disabled, notification summaries are logged
+When Cosmos is disabled, no-op repositories discard writes, every run fetches
+all details, and reconciliation cannot complete. Every posting is classified as
+new. When Resend is disabled, notification summaries are logged
 rather than emailed.
 
 Kafka triggers and producers require compatible settings and a reachable

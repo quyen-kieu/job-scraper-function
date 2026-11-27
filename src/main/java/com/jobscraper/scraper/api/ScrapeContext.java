@@ -8,12 +8,22 @@ import java.util.Objects;
  *
  * <p>Passed to each {@link CompanyScraper} to provide run correlation and timing.</p>
  */
-public record ScrapeContext(String runId, String companyId, Instant requestedAt) {
+public record ScrapeContext(String runId, String companyId, Instant requestedAt,
+                            boolean fullDetailRefresh, DetailFetchPolicy detailFetchPolicy) {
+
+    public ScrapeContext(String runId, String companyId, Instant requestedAt) {
+        this(runId, companyId, requestedAt, true, (job, reliableDate) -> true);
+    }
+
+    public boolean shouldFetchDetail(ScrapedJob job, boolean reliableSearchDate) {
+        return fullDetailRefresh || detailFetchPolicy.shouldFetch(job, reliableSearchDate);
+    }
 
     public ScrapeContext {
         Objects.requireNonNull(runId, "runId must not be null");
         Objects.requireNonNull(companyId, "companyId must not be null");
         Objects.requireNonNull(requestedAt, "requestedAt must not be null");
+        Objects.requireNonNull(detailFetchPolicy, "detailFetchPolicy must not be null");
 
         if (runId.isBlank()) {
             throw new IllegalArgumentException("runId must not be blank");
@@ -24,4 +34,3 @@ public record ScrapeContext(String runId, String companyId, Instant requestedAt)
         }
     }
 }
-

@@ -38,6 +38,7 @@ public class KafkaPublisherConfiguration {
         properties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
         properties.put(ProducerConfig.RETRIES_CONFIG, 3);
         properties.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 120000);
+        properties.put(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, kafkaProperties.maxRequestSize());
 
         return properties;
     }

@@ -9,6 +9,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * Implementation of {@link ScrapeCompletedPublisher} using Kafka.
  *
@@ -36,6 +38,13 @@ public class KafkaScrapeCompletedPublisher implements ScrapeCompletedPublisher {
     public void publish(ScrapeCompletedEvent event) {
         try {
             String payload = objectMapper.writeValueAsString(event);
+            long bytes = (long) payload.getBytes(StandardCharsets.UTF_8).length
+                    + event.companyId().getBytes(StandardCharsets.UTF_8).length;
+            if (bytes >= kafkaProperties.maxRequestSize()) {
+                throw new IllegalStateException("Scrape completion event for " + event.companyId()
+                        + " is too large for the Kafka producer (" + bytes + " bytes; limit "
+                        + kafkaProperties.maxRequestSize() + "). Reconciliation will not run.");
+            }
             ProducerRecord<String, String> record =
                     new ProducerRecord<>(
                             kafkaProperties.scrapeCompletedTopic(),

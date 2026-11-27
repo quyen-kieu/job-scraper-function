@@ -15,7 +15,7 @@ public class JobScraperProperties {
     private int maxRetries = 3;
     private boolean enabled = true;
     private List<CompanyProperties> companies = new ArrayList<>();
-    private int maxSearchPagesPerRun = 3;
+    private int maxSearchPagesPerRun = 0;
     private Duration requestDelay = Duration.ofMillis(300);
     private String mckessonStateFacetId = "fc77e3a1ab36487f9646d14f7242dd77";
     private String mckessonJobFamilyFacetId = "29ce91b0412201aafb7bf4bd4f169117";

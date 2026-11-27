@@ -16,16 +16,16 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.Optional;
 
 /**
  * Application service that deserializes a {@code job.postings.normalized} message
  * and performs idempotent persistence into Cosmos DB.
  *
- * <p>This is the sole persistence boundary for the platform: it upserts both the
- * current-state {@link NormalizedJobPosting} document and a dated {@link JobObservation}
- * record using deterministic IDs. Persistence occurs before
- * this method returns, so any failure here propagates to the caller and blocks the
- * Kafka checkpoint (see {@link com.jobscraper.function.PersistenceConsumerFunction}).</p>
+ * <p>Upserts both the current-state {@link NormalizedJobPosting} document and a dated
+ * {@link JobObservation} record using deterministic IDs. The normalizer calls this service
+ * synchronously before reconciliation. The persistence consumer also calls it for legacy
+ * events; events marked as already persisted are not written twice.</p>
  *
  * <p>New/changed/unchanged classification and the daily notification are handled upstream by
  * {@link com.jobscraper.application.normalization.ScrapeCompletedNormalizationHandler}, which
@@ -69,7 +69,7 @@ public class NormalizedPostingPersistenceHandler {
      * <ol>
      *   <li>Deserialize JSON into {@link NormalizedJobPosting}</li>
      *   <li>Upsert the posting into the {@code job-postings} container</li>
-     *   <li>Build a {@link JobObservation} keyed by the current UTC persistence date and upsert it
+     *   <li>Build a {@link JobObservation} keyed by the UTC scrape date and upsert it
      *       into the {@code job-observations} container</li>
      * </ol>
      *
@@ -79,6 +79,19 @@ public class NormalizedPostingPersistenceHandler {
      */
     public NormalizedJobPosting handle(String json) throws Exception {
         NormalizedJobPosting posting = objectMapper.readValue(json, NormalizedJobPosting.class);
+        if (posting.persistedSynchronously()) {
+            return posting;
+        }
+        return persist(posting).orElse(posting);
+    }
+
+    /**
+     * Persists a posting and observation before the caller can acknowledge its run.
+     * Empty means a newer run already superseded the posting.
+     */
+    public Optional<NormalizedJobPosting> persist(NormalizedJobPosting posting) throws Exception {
+        boolean preserveDescription = posting.descriptionPath() == null && posting.description() == null
+                && posting.descriptionPlainText() == null && posting.descriptionHtml() == null;
 
         if (posting.descriptionPath() != null) {
             String description = rawStorage.readDescription(
@@ -105,19 +118,20 @@ public class NormalizedPostingPersistenceHandler {
                     ? posting.descriptionPlainText() : posting.description();
             posting = posting.withDescriptions(posting.descriptionHtml(), text);
         }
-        postingRepository.upsert(posting);
+        if (!postingRepository.upsertIfCurrent(posting, preserveDescription)) {
+            return Optional.empty();
+        }
 
-        LocalDate scrapeDate = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+        LocalDate scrapeDate = posting.scrapeRunId() == null
+                ? LocalDate.now(clock.withZone(ZoneOffset.UTC))
+                : posting.lastSeenAt().atZone(ZoneOffset.UTC).toLocalDate();
         Instant observedAt = Instant.now(clock);
 
-        // The job.postings.normalized wire schema does not carry the originating scrape
-        // runId (see JobObservation's Javadoc). A fresh UUID identifies this persistence
-        // invocation instead.
         JobObservation observation = new JobObservation(
                 JobObservation.buildId(posting.companyId(), scrapeDate, posting.externalJobId()),
                 posting.companyId(),
                 posting.externalJobId(),
-                UUID.randomUUID().toString(),
+                posting.scrapeRunId() != null ? posting.scrapeRunId() : UUID.randomUUID().toString(),
                 observedAt,
                 scrapeDate,
                 posting.datePosted(),
@@ -129,6 +143,6 @@ public class NormalizedPostingPersistenceHandler {
 
         observationRepository.upsert(observation);
 
-        return posting;
+        return Optional.of(posting);
     }
 }

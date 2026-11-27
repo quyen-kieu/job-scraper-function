@@ -6,6 +6,7 @@ import com.jobscraper.application.notification.DailyNotificationPublisher;
 import com.jobscraper.application.notification.DailyNotificationRequestedEvent;
 import com.jobscraper.application.notification.NotificationPosting;
 import com.jobscraper.application.persistence.PersistenceOutcome;
+import com.jobscraper.application.persistence.NormalizedPostingPersistenceHandler;
 import com.jobscraper.domain.job.ContentHasher;
 import com.jobscraper.domain.job.JobLevelClassifier;
 import com.jobscraper.domain.job.NormalizedJobPosting;
@@ -24,27 +25,23 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Application service that deserializes a {@code job.scrape.completed} message, derives
- * normalized job postings, publishes each to {@code job.postings.normalized}, and publishes one
- * {@link DailyNotificationRequestedEvent} (listing every scraped posting) to
- * {@code notifications.daily}.
+ * normalized job postings, persists them, publishes them to {@code job.postings.normalized},
+ * and publishes one {@link DailyNotificationRequestedEvent} to {@code notifications.daily}.
  *
  * <p><b>Posting source:</b> postings are built from the structured {@link ScrapedJob} list
  * carried on the event (real title, location, date posted, URL). For messages produced before
  * that field existed, it falls back to deriving IDs from {@code job-{externalJobId}.html} blob
  * paths with placeholder titles.</p>
  *
- * <p><b>Why the notification is built here:</b> this is the only step that sees a company run's
- * complete posting list in a single invocation. Each posting is classified as
- * {@link PersistenceOutcome#NEW}/{@link PersistenceOutcome#UPDATED}/{@link PersistenceOutcome#UNCHANGED}
- * by reading the currently stored document (before the persistence consumer overwrites it).
- * This replaces the earlier in-memory run-completion aggregator, which could not work on Flex
- * Consumption: the normalizer and persistence functions scale on separate instances and never
- * shared heap state, so no notification was ever emitted.</p>
+ * <p>The per-company run list enables reconciliation only after all of its postings and
+ * observations have been persisted. Kafka publication alone is not a persistence barrier.</p>
  *
  * <p><b>Path handling:</b> blob paths may use either {@code /}-separated Azure Blob keys or
  * OS-native absolute filesystem paths; only the final path segment is matched.</p>
@@ -59,6 +56,7 @@ public class ScrapeCompletedNormalizationHandler {
     private final NormalizedPostingPublisher publisher;
     private final JobPostingRepository postingRepository;
     private final DailyNotificationPublisher dailyNotificationPublisher;
+    private final NormalizedPostingPersistenceHandler persistenceHandler;
     private final Clock clock;
 
     @Autowired
@@ -66,8 +64,15 @@ public class ScrapeCompletedNormalizationHandler {
             ObjectMapper objectMapper,
             NormalizedPostingPublisher publisher,
             JobPostingRepository postingRepository,
-            DailyNotificationPublisher dailyNotificationPublisher) {
-        this(objectMapper, publisher, postingRepository, dailyNotificationPublisher, Clock.systemUTC());
+            DailyNotificationPublisher dailyNotificationPublisher,
+            NormalizedPostingPersistenceHandler persistenceHandler) {
+        this(objectMapper, publisher, postingRepository, dailyNotificationPublisher, persistenceHandler, Clock.systemUTC());
+    }
+
+    public ScrapeCompletedNormalizationHandler(ObjectMapper objectMapper, NormalizedPostingPublisher publisher,
+                                                JobPostingRepository postingRepository,
+                                                DailyNotificationPublisher dailyNotificationPublisher) {
+        this(objectMapper, publisher, postingRepository, dailyNotificationPublisher, null, Clock.systemUTC());
     }
 
     ScrapeCompletedNormalizationHandler(
@@ -76,10 +81,18 @@ public class ScrapeCompletedNormalizationHandler {
             JobPostingRepository postingRepository,
             DailyNotificationPublisher dailyNotificationPublisher,
             Clock clock) {
+        this(objectMapper, publisher, postingRepository, dailyNotificationPublisher, null, clock);
+    }
+
+    ScrapeCompletedNormalizationHandler(ObjectMapper objectMapper, NormalizedPostingPublisher publisher,
+                                        JobPostingRepository postingRepository,
+                                        DailyNotificationPublisher dailyNotificationPublisher,
+                                        NormalizedPostingPersistenceHandler persistenceHandler, Clock clock) {
         this.objectMapper = objectMapper;
         this.publisher = publisher;
         this.postingRepository = postingRepository;
         this.dailyNotificationPublisher = dailyNotificationPublisher;
+        this.persistenceHandler = persistenceHandler;
         this.clock = clock;
     }
 
@@ -89,8 +102,8 @@ public class ScrapeCompletedNormalizationHandler {
      * <ol>
      *   <li>Deserialize JSON into {@link ScrapeCompletedEvent}</li>
      *   <li>Build one {@link NormalizedJobPosting} per scraped job</li>
-     *   <li>Classify each against the stored document, then publish it</li>
-     *   <li>Publish one {@link DailyNotificationRequestedEvent} listing all postings</li>
+     *   <li>Classify, persist, and publish each posting</li>
+     *   <li>Reconcile a complete successful full refresh, then publish the notification</li>
      * </ol>
      *
      * @param json the raw JSON message
@@ -104,14 +117,26 @@ public class ScrapeCompletedNormalizationHandler {
         List<NotificationPosting> notificationPostings = new ArrayList<>();
         int newCount = 0;
         int changedCount = 0;
+        List<ScrapedJob> jobs = resolveJobs(event);
 
-        for (ScrapedJob job : resolveJobs(event)) {
+        for (ScrapedJob job : jobs) {
             String id = NormalizedJobPosting.buildId(event.companyId(), job.externalJobId());
             Optional<NormalizedJobPosting> existing = postingRepository.findById(id, event.companyId());
 
-            NormalizedJobPosting posting = toNormalizedPosting(event.companyId(), job, existing, now);
+            Instant observedAt = persistenceHandler == null ? now : event.startedAt();
+            NormalizedJobPosting posting = toNormalizedPosting(event.companyId(), job, existing, observedAt)
+                    .withRun(event.runId(), false)
+                    .withSalaryRange(job.descriptionPath() != null || job.salaryRange() != null
+                            ? job.salaryRange()
+                            : existing.map(NormalizedJobPosting::salaryRange).orElse(null));
             PersistenceOutcome outcome = classify(posting, existing);
 
+            if (persistenceHandler != null) {
+                if (persistenceHandler.persist(posting).isEmpty()) {
+                    continue;
+                }
+                posting = posting.withRun(event.runId(), true);
+            }
             publisher.publish(posting);
 
             if (outcome == PersistenceOutcome.NEW) {
@@ -120,8 +145,25 @@ public class ScrapeCompletedNormalizationHandler {
                 changedCount++;
             }
             notificationPostings.add(new NotificationPosting(
-                    job.externalJobId(), job.title(), job.location(), job.datePosted(), job.url(),
-                    job.salaryRange(), outcome));
+                    job.externalJobId(), job.title(), job.location(), posting.datePosted(), job.url(),
+                    posting.salaryRange(), outcome));
+        }
+
+        int inactiveCount = 0;
+        List<String> failures = new ArrayList<>(event.errors());
+        if (event.fullDetailRefresh() != null && !event.searchComplete()) {
+            failures.add("Search enumeration was incomplete or inconsistent; reconciliation was skipped.");
+        }
+        if (persistenceHandler != null && Boolean.TRUE.equals(event.fullDetailRefresh())
+                && event.searchComplete() && event.errors().isEmpty()) {
+            Set<String> seenIds = jobs.stream().map(ScrapedJob::externalJobId).collect(Collectors.toSet());
+            var reconciliation = postingRepository.reconcile(
+                    event.companyId(), event.runId(), event.startedAt(), seenIds);
+            if (reconciliation.completed()) {
+                inactiveCount = reconciliation.inactiveCount();
+            } else {
+                failures.add("Reconciliation skipped: empty results, disabled persistence, or a newer run.");
+            }
         }
 
         dailyNotificationPublisher.publish(new DailyNotificationRequestedEvent(
@@ -130,10 +172,8 @@ public class ScrapeCompletedNormalizationHandler {
                 1,
                 newCount,
                 changedCount,
-                // Detecting postings that disappeared (went inactive) needs a reconciliation step
-                // against previously-active postings that is not implemented yet.
-                0,
-                event.errors(),
+                inactiveCount,
+                failures,
                 event.companyId(),
                 notificationPostings
         ));
@@ -147,7 +187,7 @@ public class ScrapeCompletedNormalizationHandler {
      */
     private static List<ScrapedJob> resolveJobs(ScrapeCompletedEvent event) {
         Map<String, ScrapedJob> byId = new LinkedHashMap<>();
-        if (!event.jobs().isEmpty()) {
+        if (event.fullDetailRefresh() != null || !event.jobs().isEmpty()) {
             for (ScrapedJob job : event.jobs()) {
                 byId.putIfAbsent(job.externalJobId(), job);
             }
@@ -194,9 +234,12 @@ public class ScrapeCompletedNormalizationHandler {
 
     private NormalizedJobPosting toNormalizedPosting(
             String companyId, ScrapedJob job, Optional<NormalizedJobPosting> existing, Instant now) {
-        LocalDate datePosted = job.datePosted() != null
-                ? job.datePosted()
-                : LocalDate.now(clock.withZone(ZoneOffset.UTC));
+        LocalDate datePosted = job.descriptionPath() == null
+                ? existing.map(NormalizedJobPosting::datePosted).orElse(job.datePosted())
+                : job.datePosted();
+        if (datePosted == null) {
+            datePosted = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+        }
         Instant firstSeenAt = existing.map(NormalizedJobPosting::firstSeenAt).orElse(now);
 
         return new NormalizedJobPosting(
@@ -211,7 +254,11 @@ public class ScrapeCompletedNormalizationHandler {
                 firstSeenAt,
                 now,
                 true,
-                ContentHasher.sha256(job.title() + "|" + job.location() + "|" + job.datePosted()),
+                job.descriptionPath() == null && existing.isPresent()
+                        && existing.get().titleRaw().equals(job.title())
+                        && existing.get().location().equals(job.location())
+                        ? existing.get().contentHash()
+                        : ContentHasher.sha256(job.title() + "|" + job.location() + "|" + job.datePosted()),
                 SCHEMA_VERSION,
                 job.url(),
                 null,

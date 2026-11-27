@@ -3,6 +3,8 @@ package com.jobscraper.infrastructure.cosmos;
 import com.jobscraper.domain.job.NormalizedJobPosting;
 
 import java.util.Optional;
+import java.time.Instant;
+import java.util.Set;
 
 /**
  * Contract for persisting the current-state normalized job posting document.
@@ -30,5 +32,21 @@ public interface JobPostingRepository {
      * @return the existing document, or empty if none exists yet
      */
     Optional<NormalizedJobPosting> findById(String id, String companyId);
-}
 
+    /**
+     * Writes only if the posting is not older than the company reconciliation watermark
+     * or the stored posting. Returns false when a newer state already supersedes it.
+     */
+    default boolean upsertIfCurrent(NormalizedJobPosting posting, boolean preserveDescription) {
+        upsert(posting);
+        return true;
+    }
+
+    default Optional<Instant> lastSuccessfulReconciliationAt(String companyId) {
+        return Optional.empty();
+    }
+
+    default ReconciliationResult reconcile(String companyId, String runId, Instant startedAt, Set<String> seenIds) {
+        return ReconciliationResult.skipped();
+    }
+}

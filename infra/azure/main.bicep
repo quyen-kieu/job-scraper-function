@@ -266,7 +266,7 @@ var appSettings = [
   { name: 'JOB_SCRAPER_CAPITAL_ONE_TIME_TYPE_FACET_ID', value: capitalOneTimeTypeFacetId }
   { name: 'JOB_SCRAPER_CAPITAL_ONE_LOCATION_FACET_IDS', value: join(capitalOneLocationFacetIds, ',') }
   { name: 'JOB_SCRAPER_CAPITAL_ONE_JOB_FAMILY_FACET_IDS', value: join(capitalOneJobFamilyFacetIds, ',') }
-  { name: 'JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN', value: '3' }
+  { name: 'JOB_SCRAPER_MAX_SEARCH_PAGES_PER_RUN', value: '0' }
   { name: 'JOB_SCRAPER_REQUEST_DELAY', value: 'PT0.3S' }
   { name: 'RAW_STORAGE_MODE', value: 'cosmos' }
   { name: 'KAFKA_ENABLED', value: 'true' }

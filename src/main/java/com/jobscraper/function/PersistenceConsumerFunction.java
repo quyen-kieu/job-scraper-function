@@ -12,9 +12,8 @@ import org.springframework.stereotype.Component;
 /**
  * Kafka-triggered function for the {@code job.postings.normalized} topic.
  *
- * <p>This is the dedicated persistence boundary for the platform. Cosmos DB writes for
- * {@code job-postings} and {@code job-observations} happen here via
- * {@link NormalizedPostingPersistenceHandler}, not in {@link NormalizerConsumerFunction}.</p>
+ * <p>Legacy events are persisted here. New events were already persisted synchronously by the
+ * normalizer and carry a marker so that this consumer does not write them again.</p>
  *
  * <p>Checkpoint semantics: Azure Kafka trigger checkpointing occurs only after
  * {@link #run(String, ExecutionContext)} returns without throwing. If persistence fails, the

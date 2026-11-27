@@ -11,6 +11,7 @@ import com.jobscraper.scraper.api.SalaryRangeExtractor;
 import com.jobscraper.scraper.api.ScrapeContext;
 import com.jobscraper.scraper.api.ScrapeResult;
 import com.jobscraper.scraper.api.ScrapedJob;
+import com.jobscraper.scraper.api.SearchScanTracker;
 
 import java.net.URI;
 import java.net.http.HttpResponse;
@@ -73,7 +74,8 @@ public class OracleRecruitingScraper implements CompanyScraper {
         Map<String, String> salaryRangesById = new HashMap<>();
         Map<String, DescriptionReference> descriptionPathsById = new HashMap<>();
 
-        int searchPagesFetched = fetchSearchPages(context, blobPaths, errors, requisitionsById);
+        SearchScanTracker tracker = new SearchScanTracker();
+        int searchPagesFetched = fetchSearchPages(context, blobPaths, errors, requisitionsById, tracker);
         int detailPagesFetched = fetchDetails(context, blobPaths, errors, requisitionsById,
                 salaryRangesById, descriptionPathsById);
 
@@ -93,7 +95,8 @@ public class OracleRecruitingScraper implements CompanyScraper {
                 requisitionsById.values().stream()
                         .map(requisition -> toScrapedJob(requisition, salaryRangesById.get(requisition.id()))
                                 .withDescriptionReference(descriptionPathsById.get(requisition.id())))
-                        .toList());
+                        .toList(),
+                tracker.isComplete(requisitionsById.size()), context.fullDetailRefresh());
     }
 
     /**
@@ -115,7 +118,8 @@ public class OracleRecruitingScraper implements CompanyScraper {
             ScrapeContext context,
             List<String> blobPaths,
             List<String> errors,
-            Map<String, OracleRequisitionSummary> requisitionsById) throws InterruptedException {
+            Map<String, OracleRequisitionSummary> requisitionsById,
+            SearchScanTracker tracker) throws InterruptedException {
         int searchPagesFetched = 0;
         int offset = 0;
         while (properties.canFetchSearchPage(searchPagesFetched)) {
@@ -155,6 +159,8 @@ public class OracleRecruitingScraper implements CompanyScraper {
                 errors.add("Search page " + pageNumber + " was empty before reaching the reported total");
                 break;
             }
+            tracker.recordPage(page.totalJobsCount(),
+                    page.requisitions().isEmpty() || offset >= page.totalJobsCount());
             if (page.requisitions().isEmpty() || offset >= page.totalJobsCount()) {
                 break;
             }
@@ -173,6 +179,9 @@ public class OracleRecruitingScraper implements CompanyScraper {
         int detailPagesFetched = 0;
 
         for (OracleRequisitionSummary requisition : requisitionsById.values()) {
+            if (!context.shouldFetchDetail(toScrapedJob(requisition, null), true)) {
+                continue;
+            }
             sleepPolitely();
 
             try {

@@ -12,6 +12,7 @@ import com.jobscraper.scraper.api.SalaryRangeExtractor;
 import com.jobscraper.scraper.api.ScrapeContext;
 import com.jobscraper.scraper.api.ScrapeResult;
 import com.jobscraper.scraper.api.ScrapedJob;
+import com.jobscraper.scraper.api.SearchScanTracker;
 
 import java.net.URI;
 import java.net.http.HttpResponse;
@@ -75,7 +76,8 @@ public abstract class WorkdayScraper implements CompanyScraper {
         List<String> paths = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         Map<String, Candidate> candidates = new LinkedHashMap<>();
-        int pagesFetched = fetchSearchPages(context, today, candidates, paths, errors);
+        SearchScanTracker tracker = new SearchScanTracker();
+        int pagesFetched = fetchSearchPages(context, today, candidates, paths, errors, tracker);
         int detailsFetched = fetchDetails(context, candidates, paths, errors);
         Instant completedAt = Instant.now();
         List<ScrapedJob> jobs = candidates.values().stream().map(Candidate::job).toList();
@@ -93,12 +95,13 @@ public abstract class WorkdayScraper implements CompanyScraper {
         }
 
         return new ScrapeResult(context.runId(), context.companyId(), startedAt, completedAt,
-                pagesFetched, detailsFetched, paths, errors, jobs);
+                pagesFetched, detailsFetched, paths, errors, jobs, tracker.isComplete(candidates.size()),
+                context.fullDetailRefresh());
     }
 
     private int fetchSearchPages(ScrapeContext context, LocalDate today,
                                  Map<String, Candidate> candidates, List<String> paths,
-                                 List<String> errors) throws InterruptedException {
+                                 List<String> errors, SearchScanTracker tracker) throws InterruptedException {
         int fetched = 0;
         int total = Integer.MAX_VALUE;
         for (int page = 0; properties.canFetchSearchPage(page); page++) {
@@ -111,7 +114,8 @@ public abstract class WorkdayScraper implements CompanyScraper {
                         searchRequest(offset)));
                 JsonNode root = objectMapper.readTree(body);
                 JsonNode postings = root.path("jobPostings");
-                if (!postings.isArray() || (page == 0 && !root.path("total").isIntegralNumber())) {
+                if (!postings.isArray() || !root.path("total").isIntegralNumber()
+                        || !root.path("total").canConvertToInt() || root.path("total").intValue() < 0) {
                     throw new IllegalArgumentException("Invalid Workday search response");
                 }
                 if (page == 0) {
@@ -133,6 +137,8 @@ public abstract class WorkdayScraper implements CompanyScraper {
                 }
                 fetched++;
                 parsed.forEach(candidate -> candidates.putIfAbsent(candidate.job().externalJobId(), candidate));
+                tracker.recordPage(root.path("total").intValue(),
+                        postings.isEmpty() || offset + postings.size() >= total);
                 if (postings.isEmpty() || offset + postings.size() >= total) {
                     break;
                 }
@@ -192,6 +198,9 @@ public abstract class WorkdayScraper implements CompanyScraper {
         int fetched = 0;
         for (Map.Entry<String, Candidate> entry : candidates.entrySet()) {
             Candidate candidate = entry.getValue();
+            if (!context.shouldFetchDetail(candidate.job(), false)) {
+                continue;
+            }
             try {
                 pause();
                 String body = requireSuccess(httpClient.get(URI.create(baseUrl + apiPath + candidate.path())));

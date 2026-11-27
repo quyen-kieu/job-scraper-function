@@ -80,7 +80,7 @@ class ScrapeCommandHandlerTest {
 
         ScrapeResult expectedResult = new ScrapeResult(
                 runId, companyId, now, now.plusSeconds(30), 2, 7,
-                List.of("blob-path-1", "blob-path-2"), List.of()
+                List.of("blob-path-1", "blob-path-2"), List.of(), List.of(), true
         );
 
         when(registry.find(companyId)).thenReturn(java.util.Optional.of(mockScraper));
@@ -100,6 +100,17 @@ class ScrapeCommandHandlerTest {
         assertThat(published.detailPagesFetched()).isEqualTo(7);
         assertThat(published.blobPaths()).containsExactly("blob-path-1", "blob-path-2");
         assertThat(published.errors()).isEmpty();
+        assertThat(published.searchComplete()).isTrue();
+    }
+
+    @Test
+    void legacyCompletionEventIsNotAssumedComplete() throws Exception {
+        ScrapeCompletedEvent event = objectMapper.readValue("""
+                {"runId":"run","companyId":"company","startedAt":"2026-01-01T00:00:00Z",
+                 "completedAt":"2026-01-01T00:00:01Z","searchPagesFetched":1,
+                 "detailPagesFetched":0,"blobPaths":[],"errors":[],"jobs":[]}
+                """, ScrapeCompletedEvent.class);
+        assertThat(event.searchComplete()).isFalse();
     }
 
     @Test
@@ -142,4 +153,3 @@ class ScrapeCommandHandlerTest {
         verify(scrapeCompletedPublisher, never()).publish(any());
     }
 }
-

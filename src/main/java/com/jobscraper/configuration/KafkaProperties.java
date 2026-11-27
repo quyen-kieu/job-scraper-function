@@ -18,6 +18,7 @@ public class KafkaProperties {
     private String postingsNormalizedTopic = "job.postings.normalized";
     private String metricsMonthlyTopic = "job.metrics.monthly";
     private String notificationsDailyTopic = "notifications.daily";
+    private int maxRequestSize = 1_048_576;
 
     public boolean enabled() {
         return enabled;
@@ -105,5 +106,16 @@ public class KafkaProperties {
 
     public void setNotificationsDailyTopic(String notificationsDailyTopic) {
         this.notificationsDailyTopic = Objects.requireNonNullElse(notificationsDailyTopic, "notifications.daily");
+    }
+
+    public int maxRequestSize() {
+        return maxRequestSize;
+    }
+
+    public void setMaxRequestSize(int maxRequestSize) {
+        if (maxRequestSize <= 0) {
+            throw new IllegalArgumentException("Kafka max request size must be positive");
+        }
+        this.maxRequestSize = maxRequestSize;
     }
 }

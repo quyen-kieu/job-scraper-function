@@ -34,7 +34,20 @@ public record NormalizedJobPosting(
         @JsonInclude(JsonInclude.Include.NON_NULL) String descriptionPath,
         @JsonInclude(JsonInclude.Include.NON_NULL) DescriptionFormat descriptionFormat,
         String descriptionHtml,
-        String descriptionPlainText) {
+        String descriptionPlainText,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String scrapeRunId,
+        @JsonInclude(JsonInclude.Include.NON_DEFAULT) boolean persistedSynchronously,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String salaryRange) {
+
+    public NormalizedJobPosting(String id, String companyId, String externalJobId, String titleRaw,
+                                String titleNormalized, String jobLevel, String location, LocalDate datePosted,
+                                Instant firstSeenAt, Instant lastSeenAt, boolean isActive, String contentHash,
+                                int schemaVersion, String url, String description, String descriptionPath,
+                                DescriptionFormat descriptionFormat, String descriptionHtml, String descriptionPlainText) {
+        this(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel, location, datePosted,
+                firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion, url, description,
+                descriptionPath, descriptionFormat, descriptionHtml, descriptionPlainText, null, false, null);
+    }
 
     public NormalizedJobPosting(String id, String companyId, String externalJobId, String titleRaw,
                                 String titleNormalized, String jobLevel, String location, LocalDate datePosted,
@@ -82,7 +95,45 @@ public record NormalizedJobPosting(
     public NormalizedJobPosting withDescriptions(String html, String text) {
         return new NormalizedJobPosting(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel,
                 location, datePosted, firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion,
-                url, null, null, null, html, text);
+                url, null, null, null, html, text, scrapeRunId, persistedSynchronously, salaryRange);
+    }
+
+    public NormalizedJobPosting withRun(String runId, boolean persisted) {
+        return new NormalizedJobPosting(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel,
+                location, datePosted, firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion,
+                url, description, descriptionPath, descriptionFormat, descriptionHtml, descriptionPlainText,
+                runId, persisted, salaryRange);
+    }
+
+    public NormalizedJobPosting withActive(boolean active) {
+        return new NormalizedJobPosting(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel,
+                location, datePosted, firstSeenAt, lastSeenAt, active, contentHash, schemaVersion,
+                url, description, descriptionPath, descriptionFormat, descriptionHtml, descriptionPlainText,
+                scrapeRunId, persistedSynchronously, salaryRange);
+    }
+
+    public NormalizedJobPosting withFirstSeenAt(Instant firstSeen) {
+        return new NormalizedJobPosting(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel,
+                location, datePosted, firstSeen, lastSeenAt, isActive, contentHash, schemaVersion,
+                url, description, descriptionPath, descriptionFormat, descriptionHtml, descriptionPlainText,
+                scrapeRunId, persistedSynchronously, salaryRange);
+    }
+
+    public NormalizedJobPosting withSalaryRange(String salary) {
+        return new NormalizedJobPosting(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel,
+                location, datePosted, firstSeenAt, lastSeenAt, isActive, contentHash, schemaVersion,
+                url, description, descriptionPath, descriptionFormat, descriptionHtml, descriptionPlainText,
+                scrapeRunId, persistedSynchronously, salary);
+    }
+
+    public NormalizedJobPosting withPreservedDetails(NormalizedJobPosting previous) {
+        String text = previous.descriptionPlainText() != null ? previous.descriptionPlainText() : previous.description();
+        String hash = titleRaw.equals(previous.titleRaw()) && location.equals(previous.location())
+                ? previous.contentHash() : contentHash;
+        return new NormalizedJobPosting(id, companyId, externalJobId, titleRaw, titleNormalized, jobLevel,
+                location, previous.datePosted() != null ? previous.datePosted() : datePosted,
+                firstSeenAt, lastSeenAt, isActive, hash, schemaVersion, url, null, null, null,
+                previous.descriptionHtml(), text, scrapeRunId, persistedSynchronously, previous.salaryRange());
     }
 
     public NormalizedJobPosting {

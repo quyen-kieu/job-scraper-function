@@ -90,6 +90,14 @@ rejects. The fix: `keyvault.bicep` never takes the Function App's principal id a
 - Cosmos uses key authentication via Key Vault. Functions requires its own host storage account
   and deployment container; the scraper does not use Blob Storage. The separate Confluent
   Terraform state backend also uses Azure Blob Storage.
+- Before upgrading to the hybrid reconciliation pipeline, pause scrape producers,
+  drain the scrape-command, scrape-completed and normalized-posting consumer
+  groups, and stop all old function instances. Deploy the new package and its
+  settings, then resume processing. Older instances write postings without the
+  transactional reconciliation guard and can otherwise undo inactive status.
+  The new pipeline adds per-company control documents to `job-postings`; viewer
+  queries must exclude them. The updated Azure template sets the search-page cap
+  to `0`. Existing app settings are not changed until deployment.
 - Deploy the 30-day `description-handoffs` container before running the new scraper. For an
   existing Blob-backed deployment, pause all scrape producers, drain the scraper, normalizer,
   and persistence consumer groups, and pause those consumers during the version switch. The

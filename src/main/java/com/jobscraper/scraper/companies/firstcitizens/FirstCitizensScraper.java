@@ -12,6 +12,7 @@ import com.jobscraper.scraper.api.SalaryRangeExtractor;
 import com.jobscraper.scraper.api.ScrapeContext;
 import com.jobscraper.scraper.api.ScrapeResult;
 import com.jobscraper.scraper.api.ScrapedJob;
+import com.jobscraper.scraper.api.SearchScanTracker;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -57,6 +58,7 @@ public class FirstCitizensScraper implements CompanyScraper {
         List<String> errors = new ArrayList<>();
         Map<String, ScrapedJob> jobs = new LinkedHashMap<>();
         int pagesFetched = 0;
+        SearchScanTracker tracker = new SearchScanTracker();
 
         for (int page = 1; properties.canFetchSearchPage(page - 1); page++) {
             if (page > 1) {
@@ -116,6 +118,7 @@ public class FirstCitizensScraper implements CompanyScraper {
                 errors.add("Search page " + page + " was empty before reaching the reported total");
                 break;
             }
+            tracker.recordPage(searchPage.totalCount(), (long) page * PAGE_SIZE >= searchPage.totalCount());
             if ((long) page * PAGE_SIZE >= searchPage.totalCount()) {
                 break;
             }
@@ -135,7 +138,8 @@ public class FirstCitizensScraper implements CompanyScraper {
             errors.add("Run summary write failed: " + e.getMessage());
         }
         return new ScrapeResult(context.runId(), context.companyId(), startedAt, completedAt,
-                pagesFetched, 0, paths, errors, scrapedJobs);
+                pagesFetched, 0, paths, errors, scrapedJobs, tracker.isComplete(jobs.size()),
+                context.fullDetailRefresh());
     }
 
     private static URI searchUri(int page) {

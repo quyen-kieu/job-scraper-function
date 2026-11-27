@@ -19,7 +19,23 @@ public record ScrapeResult(
         int detailPagesFetched,
         List<String> blobPaths,
         List<String> errors,
-        List<ScrapedJob> jobs) {
+        List<ScrapedJob> jobs,
+        boolean searchComplete,
+        Boolean fullDetailRefresh) {
+
+    public ScrapeResult(String runId, String companyId, Instant startedAt, Instant completedAt,
+                        int searchPagesFetched, int detailPagesFetched, List<String> blobPaths,
+                        List<String> errors, List<ScrapedJob> jobs, boolean searchComplete) {
+        this(runId, companyId, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
+                blobPaths, errors, jobs, searchComplete, null);
+    }
+
+    public ScrapeResult(String runId, String companyId, Instant startedAt, Instant completedAt,
+                        int searchPagesFetched, int detailPagesFetched, List<String> blobPaths,
+                        List<String> errors, List<ScrapedJob> jobs) {
+        this(runId, companyId, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
+                blobPaths, errors, jobs, false, null);
+    }
 
     /**
      * Creates a result without structured job data (only raw paths).
@@ -34,7 +50,7 @@ public record ScrapeResult(
             List<String> blobPaths,
             List<String> errors) {
         this(runId, companyId, startedAt, completedAt, searchPagesFetched, detailPagesFetched,
-                blobPaths, errors, List.of());
+                blobPaths, errors, List.of(), false, null);
     }
 
     public ScrapeResult {
